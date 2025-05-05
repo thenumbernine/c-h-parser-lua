@@ -90,7 +90,6 @@ function _ctype:init(args)
 	self.parser = assert.index(args, 'parser')	-- there for prims, not needed otherwise
 	assert(not self.parser.ctypes[self.name], "tried to redefine "..tostring(self.name))
 	self.parser.ctypes[self.name] = self
-	self.parser.ctypesInOrder:insert(self)
 
 	self.fields = args.fields
 	self.isTypedef = args.isTypedef
@@ -117,28 +116,42 @@ function _ctype:init(args)
 --DEBUG:print('setting ctype['..self.name..'] = '..tostring(self))
 end
 
-function _ctype:serialize(consume)
-	
-	if self.baseType then
-		if self.isTypedef then
-			consume'typedef'
-		end
+function _ctype:serialize(consume, varname)
+	-- TODO should a ctype be a typedef?  nah?  esp with name being dif things
+	if self.isTypedef then
+		consume'typedef'
 		self.baseType:serialize(consume)
-	end
-
-	if self.fields then
-		consume(self.isunion and 'union' or 'struct')
-	end
-	if self.name then
 		consume(self.name)
-	end
-	if self.isPointer then
-		consume'*'
-	end
-	if self.arrayCount then
-		consume'['
-		consume(self.arrayCount)
-		consume']'
+	elseif self.name then
+--[[ use the stored name		
+		consume(self.name)
+--]]
+-- [[ regenerate - same as in _ctype:init ... consoldate
+		-- if it's a pointer type ...
+		if self.baseType then
+			if self.arrayCount then
+				self.baseType:serialize(consume, varname)
+				consume'['
+				consume(self.arrayCount)
+				consume']'
+			elseif self.isPointer then
+				consume(self.baseType.name)
+				consume'*'
+				if varname then
+					consume(varname)
+				end
+			else
+				error("???")
+			end
+		else
+			consume(self.name)	-- anonymous here?
+			if varname then
+				consume(varname)
+			end
+		end
+--]]
+	else
+		consume'#ERROR'
 	end
 end
 
@@ -148,8 +161,7 @@ function _symbol:init(args)
 	self.name = assert.type(assert.index(args, 'name'), 'string')
 end
 function _symbol:serialize(consume)
-	self.type:serialize(consume)
-	consume(self.name)
+	self.type:serialize(consume, self.name)
 end
 
 return ast

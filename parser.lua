@@ -49,10 +49,8 @@ function CParser:getctype(typename)
 	local ctype = self.ctypes[typename]
 	if not ctype then return end
 
-	if ctype.baseType
-	and not ctype.arrayCount
-	and not ctype.isPointer
-	then
+	-- TODO should typedefs be ctypes?
+	if ctype.isTypedef then
 		local sofar = {}
 		-- if it has a baseType and no arrayCount then it's just a typedef ...
 		repeat
@@ -60,12 +58,8 @@ function CParser:getctype(typename)
 				error"found a typedef loop"
 			end
 			sofar[ctype] = true
-			ctype = ctype.baseType
-		until not (
-			ctype.baseType
-			and not ctype.arrayCount
-			and not ctype.isPointer
-		)
+			ctype = assert.index(ctype, 'baseType')
+		until not ctype.isTypedef
 	end
 	return ctype
 end
@@ -108,8 +102,8 @@ function CParser:init(args)
 	-- put types here ... for name
 	self.ctypes = {}
 	
-	-- put types in-order here
-	self.ctypesInOrder = table()
+	-- put declared types in-order here
+	self.declTypes = table()
 
 	-- put symbol defs here
 	self.symbols = {}
@@ -271,7 +265,8 @@ function CParser:parseTree()
 				name = name,
 				baseType = srctype,
 			})
-			
+			self.declTypes:insert(ctype)
+
 			self:mustbe(';', 'symbol')
 
 		-- struct ...
@@ -293,9 +288,21 @@ function CParser:parseTree()
 			local ctype = self:getctype(ctypename)
 			assert(ctype, {msg="expected ctype"})
 
+			while self:canbe('*', 'symbol') do
+				ctype = self:getptrtype(ctype)
+			end
+
 			-- TODO properly parse variable definition, including function and function-pointer definitions
 			local name = self:mustbe(nil, 'name')
-		
+
+			while self:canbe('[', 'symbol') do
+				local count = self:mustbe(nil, 'number')
+				count = tonumber(count) or error("expected number: "..tostring(count))
+				assert.gt(count, 0, "can we allow non-positive-sized arrays?")
+				self:mustbe(']', 'symbol')
+				ctype = self:getArrayType(ctype, count)
+			end
+
 			-- TODO function here
 			local symbol = self:node('_symbol', {
 				name = name,
@@ -377,9 +384,7 @@ function CParser:parseType(allowVarArray)
 			assert(count > 0, "can we allow non-positive-sized arrays?")
 		end
 		self:mustbe(']', 'symbol')
-		
 		assert(count, "aren't [] arrays just pointers?  or we have to error about size being missing?")
-
 		fieldtype = self:getArrayType(fieldtype, count)
 	end
 
@@ -479,21 +484,18 @@ function CParser:parseStruct(isunion)
 					fieldname = self:mustbe(nil, 'name')
 				end
 
+				while self:canbe('[', 'symbol') do
+					local count = self:nustbe(nil, 'number')
+					assert.gt(count, 0, "can we allow non-positive-sized arrays?")
+					self:mustbe('[', 'symbol')
+					fieldtype = getArrayType(fieldtype, count)
+				end
+
 				local field = self:node('_field', {
 					name = fieldname,
 					type = fieldtype,
 				})
 				ctype.fields:insert(field)
-
-				while self:canbe('[', 'symbol') do
-					local count = self:nustbe(nil, 'number')
-					assert.gt(count, 0, "can we allow non-positive-sized arrays?")
-					self:mustbe('[', 'symbol')
-
-					-- TODO shouldn't we be modifying field.type to be an array-type with array 'count' ?
-					fieldtype = getArrayType(fieldtype, count)
-					field.type = fieldtype
-				end
 
 				if self:canbe(';', 'symbol') then
 					break

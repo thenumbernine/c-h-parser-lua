@@ -4,19 +4,23 @@ local CParser = require 'c-header.parser'
 local headers = CParser()
 
 assert(headers[[
+typedef void T_v;
+typedef int T_i;
+typedef char * T_pc;
 
-typedef int foo;
+// TODO typedef and symbol / function decl should overlap
+// typedef int y[20];
 
-//typedef void F;
-
-int x;
+int i;
+char * pc; // pointers don't work?
+float f_20[20];
+float * pf_20[20];
+char c_20_30[20][30];
 ]])
 
 -- maybe an AST is good, for re-serialization ...
 print'typedefs:'
-for i,ctype in ipairs(headers.ctypesInOrder:filter(function(ctype)
-	return not ctype.isPrimitive
-end)) do
+for i,ctype in ipairs(headers.declTypes) do
 	print('#'..i, ctype:toC()..';')
 end
 print()
