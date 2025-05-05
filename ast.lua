@@ -8,18 +8,14 @@ local AST = BaseAST:subclass()
 
 ast.node = AST
 
-function AST:toC(args)
-	return self:serializeRecursiveMember('toC_recursive', args)
-end
-
--- why distinguish toC() and serialize(consume)?
--- The need for this design pops up more in subclasses.
--- serialize(consume) is used by all language-serializations
--- toC_recursive(consume) is for Lua-specific serialization (to-be-subclassed)
--- I'm not sure if this is better than just using a fully separate table of serialization functions per node ...
--- toC() is the external API
-function AST:toC_recursive(consume)
-	return self:serialize(consume)
+function AST:toC()
+	local s = ''
+	local sep = ''
+	self:serialize(function(x)
+		s = s .. sep .. tostring(x)
+		sep = ' '
+	end)
+	return s
 end
 
 -- ok maybe it's not such a good idea to use tostring and serialization for the same purpose ...
@@ -43,6 +39,11 @@ function _field:init(args)
 	self.name = assert.type(assert.index(args, 'name'), 'string')
 	self.type = assert.is(assert.index(args, 'type'), _ctype)
 end
+function _field:serialize(consume)
+	self.type:serialize(consume)
+	assert(self.name, 'some fields are anonymous...')
+	consume(self.name)
+end
 
 --[[
 args:
@@ -54,6 +55,9 @@ args:
 	arrayCount = if the type is an array of another type
 	isPrimitive = if this is a primitive type
 	isPointer = is a pointer of the base type
+
+TODO parser needs to be in here so just use this one and not nodeclass?
+or move this one's parser-specific code into CParser.ast:node() ?
 
 usage: (TODO subclasses?)
 primitives: name isPrimitive size get set
@@ -89,6 +93,8 @@ function _ctype:init(args)
 	self.parser.ctypesInOrder:insert(self)
 
 	self.fields = args.fields
+	self.isTypedef = args.isTypedef
+	self.isEnum = args.isEnum
 	self.isunion = args.isunion
 	self.baseType = args.baseType
 	self.arrayCount = args.arrayCount
@@ -111,5 +117,39 @@ function _ctype:init(args)
 --DEBUG:print('setting ctype['..self.name..'] = '..tostring(self))
 end
 
+function _ctype:serialize(consume)
+	
+	if self.baseType then
+		if self.isTypedef then
+			consume'typedef'
+		end
+		self.baseType:serialize(consume)
+	end
+
+	if self.fields then
+		consume(self.isunion and 'union' or 'struct')
+	end
+	if self.name then
+		consume(self.name)
+	end
+	if self.isPointer then
+		consume'*'
+	end
+	if self.arrayCount then
+		consume'['
+		consume(self.arrayCount)
+		consume']'
+	end
+end
+
+local _symbol = nodeclass'symbol'
+function _symbol:init(args)
+	self.type = assert.is(assert.index(args, 'type'), _ctype)
+	self.name = assert.type(assert.index(args, 'name'), 'string')
+end
+function _symbol:serialize(consume)
+	self.type:serialize(consume)
+	consume(self.name)
+end
 
 return ast

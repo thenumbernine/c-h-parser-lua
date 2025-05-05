@@ -25,12 +25,12 @@ function CTokenizer:initSymbolsAndKeywords()
 
 	-- self.keywords lets the tokenizer flag if this is a reserved word or not, that's all
 	self.keywords = {
-		'const',
-		'enum',
-		'extern',
-		'struct',
-		'typedef',
-		'union',
+		const = true,
+		enum = true,
+		extern = true,
+		struct = true,
+		typedef = true,
+		union = true,
 	}
 end
 
@@ -190,7 +190,9 @@ ptrdiff_t
 		self:node('_ctype', {name=name, isPrimitive=true, parser=self})
 	end
 
-	if args then self(args) end
+	if args then 
+		assert(self(args))
+	end
 end
 
 --[[
@@ -212,7 +214,7 @@ function CParser:__call(args)
 
 	local data = assert.index(args, 'data')
 
-	self:setData(data)
+	return self:setData(data)
 end
 
 function CParser:buildTokenizer(data)
@@ -221,87 +223,95 @@ end
 
 -- parser/base/parser calls this after setData
 function CParser:parseTree()
-	-- unlike parser/base/parser, I'm not going to save the tree here
+	repeat
+		-- unlike parser/base/parser, I'm not going to save the tree here
+		-- typedef ...
+		if self:canbe('typedef', 'keyword') then
+			local srctype
+			-- next is either a previously declared typename or 'struct'/'union' followed by a struct/union def
+			if self:canbe(nil, 'name') then
+				local prefix = self:parseSignedUnsignedShortLong()
 
-	-- typedef ...
-	if self:canbe('typedef', 'keyword') then
-		local srctype
-		-- next is either a previously declared typename or 'struct'/'union' followed by a struct/union def
-		if self:canbe(nil, 'name') then
-			local prefix = self:parseSignedUnsignedShortLong()
+				-- TODO this won't handled `signed`, `unsigned` etc without the `int` at the end ...
+				local name = self.lasttoken
+				if prefix then name = prefix..' '..name end
 
-			-- TODO this won't handled `signed`, `unsigned` etc without the `int` at the end ...
-			local name = self.lasttoken
-			if prefix then name = prefix..' '..name end
+				srctype = assert(self:getctype(name), "couldn't find type "..name)
+			
+			-- typedef struct ...
+			-- typedef union ...
+			elseif self:canbe('struct', 'keyword') 
+			or self:canbe('union', 'keyword')
+			then
+				-- TODO this still could either be ...
+				--  ... a named struct declaration
+				--  ... an anonymous struct declaration
+				--  ... a 'struct ____' typename
+				-- and we can't know until after we read the '{'
 
-			srctype = assert(self:getctype(name), "couldn't find type "..name)
-			self:consume()
-		
-		-- typedef struct ...
-		-- typedef union ...
-		elseif self:canbe('struct', 'keyword') 
+				local srctype = self:parseStruct(self.lasttoken == 'union')
+				assert(srctype)			
+			
+			-- typedef enum ...
+			elseif self:canbe('enum', 'keyword') then
+				local srctype = self:parseEnum()
+				assert(srctype)
+			end
+
+			while self:canbe('*', 'symbol') do
+				srctype = self:getptrtype(srctype)
+			end
+
+			local name = self:mustbe(nil, 'name')
+			
+			-- make a typedef type
+			local ctype = self:node('_ctype', {
+				parser = self,
+				isTypedef = true,
+				name = name,
+				baseType = srctype,
+			})
+			
+			self:mustbe(';', 'symbol')
+
+		-- struct ...
+		-- union ...
+		elseif self:canbe('struct', 'keyword')
 		or self:canbe('union', 'keyword')
 		then
-			-- TODO this still could either be ...
-			--  ... a named struct declaration
-			--  ... an anonymous struct declaration
-			--  ... a 'struct ____' typename
-			-- and we can't know until after we read the '{'
-
-			local srctype = self:parseStruct(self.lasttoken == 'union')
-			assert(srctype)			
-		
-		-- typedef enum ...
+			local ctype = self:parseStruct(self.lasttoken == 'union')
+			self:mustbe(';', 'symbol')
 		elseif self:canbe('enum', 'keyword') then
-			local srctype = self:parseEnum()
-			assert(srctype)
-		end
+			local ctype = self:parseEnum()
+			self:mustbe(';', 'symbol')
 
-		while self:canbe('*', 'symbol') do
-			srctype = self:getptrtype(srctype)
-		end
+		-- extern ...
+		else
+			local extern = self:canbe('extern', 'keyword')
+			
+			local ctypename = self:mustbe(nil, 'name')
+			local ctype = self:getctype(ctypename)
+			assert(ctype, {msg="expected ctype"})
 
-		self:mustbe(nil, 'name')
+			-- TODO properly parse variable definition, including function and function-pointer definitions
+			local name = self:mustbe(nil, 'name')
 		
-		-- make a typedef type
-		local ctype = self:node('_ctype', {
-			name = self.lasttoken,
-			baseType = srctype,
-		})
-		self:mustbe(';', 'symbol')
+			-- TODO function here
+			local symbol = self:node('_symbol', {
+				name = name,
+				type = ctype,
+			})
 
-	-- struct ...
-	-- union ...
-	elseif self:canbe('struct', 'keyword')
-	or self:canbe('union', 'keyword')
-	then
-		local ctype = self:parseStruct(self.lasttoken == 'union')
-		self:mustbe(';', 'symbol')
-	elseif self:canbe('enum', 'keyword') then
-		local ctype = self:parseEnum()
-		self:mustbe(';', 'symbol')
+			if self.symbols[name] then error("already defined "..name) end
+			self.symbols[name] = symbol
+			self.symbolsInOrder:insert(symbol)
 
-	-- extern ...
-	else
-		local extern = self:canbe('extern', 'keyword')
-		
-		local ctypename = self:mustbe(nil, 'name')
-		local ctype = self:getctype(ctypename)
+			-- TODO handle [ ]
+			-- can you declare an array of functions?
 
-		-- TODO properly parse variable definition, including function and function-pointer definitions
-		local name = self:mustbe(nil, 'name')
-	
-		-- TODO function here
-		local symbol = {
-			ctype = ctype,
-			name = name,
-		}
-		if self.symbols[name] then error("already defined "..name) end
-		self.symbols[name] = symbol
-		self.symbolsInOrder:insert(symbol)
-
-		self:mustbe(';', 'symbol')
-	end
+			self:mustbe(';', 'symbol')
+		end
+	until not self.t.token
 end
 
 function CParser:parseSignedUnsignedShortLong()
@@ -310,18 +320,14 @@ function CParser:parseSignedUnsignedShortLong()
 	or self:canbe('unsigned', 'name')
 	then
 		prefix = self.lasttoken
-		self:consume()
 	end
 	
 	if self:canbe('short', 'name') then
 		prefix = prefix..' '..self.lasttoken
-		self:consume()
 	elseif self:canbe('long', 'name') then
 		prefix = prefix..' '..self.lasttoken
-		self:consume()
 		if self:canbe('long', 'name') then
 			prefix = prefix..' '..self.lasttoken
-			self:consume()
 		end
 	end
 	return prefix
@@ -430,7 +436,7 @@ function CParser:parseStruct(isunion)
 
 			local nestedtype = self:parseStruct(token == 'union')
 --DEBUG:assert.is(nestedtype, self.ast._ctype)
-			ctype.fields:insert(self.ast.node('_field', {
+			ctype.fields:insert(self:node('field', {
 				name = '',
 				type = nestedtype,
 			}))
@@ -473,7 +479,7 @@ function CParser:parseStruct(isunion)
 					fieldname = self:mustbe(nil, 'name')
 				end
 
-				local field = self.ast.node('_field', {
+				local field = self:node('_field', {
 					name = fieldname,
 					type = fieldtype,
 				})
