@@ -6,7 +6,7 @@ Maybe some day I'll grow the parsing project to be able to create its own parser
 Takes in C header code with ctor / subsequent call() info.
 Collects definitions into the parser:
 	.structs for structs/unions
-	.typedefs 
+	.typedefs
 	.funcs
 	.vars
 --]]
@@ -16,9 +16,9 @@ local table = require 'ext.table'
 local assert = require 'ext.assert'
 
 local Tokenizer = require 'parser.base.tokenizer'
-local CTokenizer = Tokenizer:subclass()
+local C_H_Tokenizer = Tokenizer:subclass()
 
-function CTokenizer:initSymbolsAndKeywords()
+function C_H_Tokenizer:initSymbolsAndKeywords()
 	for w in ([[* ( ) { } [ ] ; : ,]]):gmatch('%S+') do
 		self.symbols:insert(w)
 	end
@@ -34,18 +34,18 @@ function CTokenizer:initSymbolsAndKeywords()
 	}
 end
 
-CTokenizer.singleLineComment = string.patescape'//'
+C_H_Tokenizer.singleLineComment = string.patescape'//'
 
 -- TODO extend Tokenizer:parseNumber to handle multiple number types, not just hex/dec
 
 
 local Parser = require 'parser.base.parser'
-local CParser = Parser:subclass()
+local C_H_Parser = Parser:subclass()
 
-CParser.ast = require 'c-header.ast'
+C_H_Parser.ast = require 'c-h-parser.ast'
 
 -- follow typedef baseType lookups to the origin and return that
-function CParser:getctype(typename)
+function C_H_Parser:getctype(typename)
 	local ctype = self.ctypes[typename]
 	if not ctype then return end
 
@@ -64,7 +64,7 @@ function CParser:getctype(typename)
 	return ctype
 end
 
-function CParser:getptrtype(baseType)
+function C_H_Parser:getptrtype(baseType)
 --DEBUG:print('getptrtype', baseType)
 	local ptrtypename = baseType.name..'*'
 --DEBUG:print('getptrtype ptrtypename', ptrtypename)
@@ -82,7 +82,7 @@ function CParser:getptrtype(baseType)
 	return ptrType
 end
 
-function CParser:getArrayType(baseType, ar)
+function C_H_Parser:getArrayType(baseType, ar)
 	local ctype = self:getctype(baseType.name..'['..ar..']')
 --DEBUG:print('looking for ctype name', baseType.name..'['..ar..'], got', ctype)
 	-- if not then make the array-type
@@ -97,11 +97,11 @@ function CParser:getArrayType(baseType, ar)
 end
 
 -- forward to __call
-function CParser:init(args)
-	
+function C_H_Parser:init(args)
+
 	-- put types here ... for name
 	self.ctypes = {}
-	
+
 	-- put declared types in-order here
 	self.declTypes = table()
 
@@ -184,7 +184,7 @@ ptrdiff_t
 		self:node('_ctype', {name=name, isPrimitive=true, parser=self})
 	end
 
-	if args then 
+	if args then
 		assert(self(args))
 	end
 end
@@ -199,7 +199,7 @@ I'm using the same API style in preproc and here: successive calls to succesivel
 
 Should I do it in my parser/ project as well?
 --]]
-function CParser:__call(args)
+function C_H_Parser:__call(args)
 	if type(args) == 'string' then
 		args = {data=args}
 	elseif type(args) ~= 'table' then
@@ -211,12 +211,12 @@ function CParser:__call(args)
 	return self:setData(data)
 end
 
-function CParser:buildTokenizer(data)
-	return CTokenizer(data)
+function C_H_Parser:buildTokenizer(data)
+	return C_H_Tokenizer(data)
 end
 
 -- parser/base/parser calls this after setData
-function CParser:parseTree()
+function C_H_Parser:parseTree()
 	repeat
 		-- unlike parser/base/parser, I'm not going to save the tree here
 		-- typedef ...
@@ -231,10 +231,10 @@ function CParser:parseTree()
 				if prefix then name = prefix..' '..name end
 
 				srctype = assert(self:getctype(name), "couldn't find type "..name)
-			
+
 			-- typedef struct ...
 			-- typedef union ...
-			elseif self:canbe('struct', 'keyword') 
+			elseif self:canbe('struct', 'keyword')
 			or self:canbe('union', 'keyword')
 			then
 				-- TODO this still could either be ...
@@ -244,8 +244,8 @@ function CParser:parseTree()
 				-- and we can't know until after we read the '{'
 
 				local srctype = self:parseStruct(self.lasttoken == 'union')
-				assert(srctype)			
-			
+				assert(srctype)
+
 			-- typedef enum ...
 			elseif self:canbe('enum', 'keyword') then
 				local srctype = self:parseEnum()
@@ -257,7 +257,7 @@ function CParser:parseTree()
 			end
 
 			local name = self:mustbe(nil, 'name')
-			
+
 			-- make a typedef type
 			local ctype = self:node('_ctype', {
 				parser = self,
@@ -283,7 +283,7 @@ function CParser:parseTree()
 		-- extern ...
 		else
 			local extern = self:canbe('extern', 'keyword')
-			
+
 			local ctypename = self:mustbe(nil, 'name')
 			local ctype = self:getctype(ctypename)
 			assert(ctype, {msg="expected ctype"})
@@ -321,14 +321,14 @@ function CParser:parseTree()
 	until not self.t.token
 end
 
-function CParser:parseSignedUnsignedShortLong()
+function C_H_Parser:parseSignedUnsignedShortLong()
 	local prefix
 	if self:canbe('signed', 'name')
 	or self:canbe('unsigned', 'name')
 	then
 		prefix = self.lasttoken
 	end
-	
+
 	if self:canbe('short', 'name') then
 		prefix = prefix..' '..self.lasttoken
 	elseif self:canbe('long', 'name') then
@@ -341,7 +341,7 @@ function CParser:parseSignedUnsignedShortLong()
 end
 
 -- similar to struct but without the loop over multiple named vars with the same base type
-function CParser:parseType(allowVarArray)
+function C_H_Parser:parseType(allowVarArray)
 --DEBUG:print'parseType'
 
 	-- should these be keywords?
@@ -380,7 +380,7 @@ function CParser:parseType(allowVarArray)
 
 	while self:canbe('[', 'symbol') do
 		local count = self:canbe(nil, 'number')
-		if count then	
+		if count then
 			assert(count > 0, "can we allow non-positive-sized arrays?")
 		end
 		self:mustbe(']', 'symbol')
@@ -394,7 +394,7 @@ end
 
 -- assumes 'struct' or 'union' has already been parsed
 -- doesn't assert closing ';' (since it could be used in typedef)
-function CParser:parseStruct(isunion)
+function C_H_Parser:parseStruct(isunion)
 
 	local name = self:canbe(nil, 'name')
 	if name then
@@ -424,9 +424,9 @@ function CParser:parseStruct(isunion)
 
 	while true do
 --DEBUG:print('field first token', token, tokentype)
-		if self:canbe('}', 'symbol') then 
-			break 
-		elseif self:canbe('struct', 'keyword') 
+		if self:canbe('}', 'symbol') then
+			break
+		elseif self:canbe('struct', 'keyword')
 		or self:canbe('union', 'keyword')
 		then
 			-- TODO
@@ -480,7 +480,7 @@ function CParser:parseStruct(isunion)
 					self:mustbe('packed', 'name')
 					self:mustbe(')', 'symbol')
 					self:mustbe(')', 'symbol')
-					
+
 					fieldname = self:mustbe(nil, 'name')
 				end
 
@@ -513,8 +513,9 @@ end
 
 -- TODO would be nice to treat enums as constants / define's ...
 -- using the ext.load shim layer maybe ...
-function CParser:parseEnum()
+function C_H_Parser:parseEnum()
 	local name = self:canbe(nil, 'name')
+
 	if not self:canbe('{', 'symbol') then
 		assert(name, "enum expected name or {")
 		local ctype = assert(self:getctype(name), "couldn't find type "..tostring(name))
@@ -531,40 +532,42 @@ function CParser:parseEnum()
 		ctype = self:node('_ctype', {
 			parser = self,
 			name = name,
-			baseType = assert(ctypes.uint32_t),
+			baseType = assert(self.ctypes.uint32_t),
 		})
 		ctype.isEnum = true
 		ctype.enumValues = table()
 		valueDest = ctype.enumValues
 	else
-		ctype = ctypes.int	-- default enum type?
+		ctype = self.ctypes.int	-- default enum type?
 		valueDest = self.anonEnumValues
 	end
 
 	local value = 0
-	while true do
-		local name = self:mustbe(nil, 'name')
-		if self:canbe('=', 'symbol') then
-			value = self:mustbe(nil, 'number')
-			value = tonumber(value) or error("failed to parse enum as number: "..value)
-		end
+	if not self:canbe('}', 'symbol') then
+		while true do
+			local name = self:mustbe(nil, 'name')
+			if self:canbe('=', 'symbol') then
+				value = self:mustbe(nil, 'number')
+				value = tonumber(value) or error("failed to parse enum as number: "..value)
+			end
 --DEBUG:print('setting enum '..tostring(name)..' = '..tostring(value))
-		
-		-- TODO if ctype had a name then specify these with it isntead of in the global pool
-		valueDest:insert{
-			name = name,
-			value = value,
-		}
 
-		value = value + 1
+			-- TODO if ctype had a name then specify these with it isntead of in the global pool
+			valueDest:insert(self:node('_enumdef', {
+				parser = self,
+				name = name,
+				value = value,
+			}))
 
-		local gotComma = self:canbe(',', 'symbol')
-		if self:canbe('}', 'symbol') then break end
+			value = value + 1
 
-		if not gotComma then error("expected , found "..tostring(token).." rest is "..tostring(str)) end
+			local gotComma = self:canbe(',', 'symbol')
+			if self:canbe('}', 'symbol') then break end
+
+			if not gotComma then error("expected , found "..tostring(token).." rest is "..tostring(str)) end
+		end
 	end
-
 	return ctype
 end
 
-return CParser 
+return C_H_Parser

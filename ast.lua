@@ -164,4 +164,17 @@ function _symbol:serialize(consume)
 	self.type:serialize(consume, self.name)
 end
 
+-- this and symbol has a bit of overlap - this is typeless - symbol is valueless
+local _enumdef = nodeclass'enumdef'
+function _enumdef:init(args)
+	self.name = assert.type(assert.index(args, 'name'), 'string')
+	self.value = assert.type(assert.index(args, 'value'), 'number')	-- number?  or expression?  or name?
+end
+function _enumdef:serialize(consume)
+	consume(self.name)
+	consume'='
+	consume(self.value)
+end
+
+
 return ast
