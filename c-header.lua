@@ -1,0 +1,641 @@
+--[[
+C header parser
+Maybe I'll using my parsing project's tokenizer and datareader for this...
+Maybe some day I'll grow the parsing project to be able to create its own parser from a provided grammar...
+
+Takes in C header code with ctor / subsequent call() info.
+Collects definitions into the parser:
+	.structs for structs/unions
+	.typedefs 
+	.funcs
+	.vars
+--]]
+local string = require 'ext.string'
+local table = require 'ext.table'
+local Tokenizer = require 'parser.base.tokenizer'
+local CTokenizer = Tokenizer:subclass()
+
+function CTokenizer:initSymbolsAndKeywords()
+	for w in ([[* ( ) { } [ ] ; : ,]]):gmatch('%S+') do
+		self.symbols:insert(w)
+	end
+
+	-- self.keywords lets the tokenizer flag if this is a reserved word or not, that's all
+	self.keywords = {
+		'const',
+		'enum',
+		'extern',
+		'struct',
+		'typedef',
+		'union',
+	}
+end
+
+CTokenizer.singleLineComment = string.patescape'//'
+
+-- TODO extend Tokenizer:parseNumber to handle multiple number types, not just hex/dec
+
+
+
+local CType
+
+local Field = class()
+function Field:init(args)
+	self.name = assert(args.name)
+	assert(type(self.name) == 'string')
+	self.type = assert(args.type)
+assert(debug.getmetatable(self.type) == CType)
+	self.offset = 0	-- calculate this later
+end
+function Field:__tostring()
+	return '[@'..self.offset..' '..self.type.name..' '..self.name..']'
+end
+Field.__concat = defaultConcat
+
+--[[
+args:
+	name = it could be nameless for typedef'd or anonymous nested structs
+	anonymous = true for name == nil for nested anonymous structs/unions
+	fields = it will only exist for structs
+	isunion = goes with fields for unions vs structs
+	baseType = for typedefs or for arrays
+	arrayCount = if the type is an array of another type
+	size = defined for prims, computed for structs, it'll be manually set for primitives
+	get = getter function
+	set = setter function
+	mt = is the metatype of this ctype
+	isPrimitive = if this is a primitive type
+	isPointer = is a pointer of the base type
+
+usage: (TODO subclasses?)
+primitives: name isPrimitive size get set
+typedef: name baseType
+array: [name] baseType arrayCount
+pointer: baseType isPointer
+struct: [name] fields [isunion]
+--]]
+CType = class()
+ffi.CType = CType
+function CType:init(args)
+	args = args or {}
+	self.name = args.name
+	if not self.name then
+		-- if it's a pointer type ...
+		if args.baseType then
+			if args.arrayCount then
+				self.name = args.baseType.name..'['..args.arrayCount..']'
+			elseif args.isPointer then
+				self.name = args.baseType.name..'*'
+			else
+				error("???")
+			end
+		else
+			self.name = nextuniquename()
+			self.anonymous = true
+		end
+--DEBUG:print('...CType new name', self.name)
+	else
+--DEBUG:print('...CType already has name', self.name)
+	end
+	assert(not self.parser.ctypes[self.name], "tried to redefine "..tostring(self.name))
+	self.parser.ctypes[self.name] = self
+
+	self.fields = args.fields
+	self.isunion = args.isunion
+	self.baseType = args.baseType
+	self.arrayCount = args.arrayCount
+	self.isPrimitive = args.isPrimitive
+	self.isPointer = args.isPointer
+	self.mt = args.mt
+
+	self.parser = assert.index(args, 'parser')	-- there for prims, not needed otherwise
+
+	assert(not (self.arrayCount and self.fields), "can't have an array of a struct - split these into two CTypes")
+
+	if self.isPointer then
+		assert(self.baseType)
+	elseif self.isPrimitive then
+	elseif self.arrayCount then
+	elseif not self.fields then
+	else
+		-- struct?
+		assert(self.fields)
+		-- expect :finalize to be called later
+	end
+
+--DEBUG:print('setting ctype['..self.name..'] = '..tostring(self))
+end
+
+
+-- follow typedef baseType lookups to the origin and return that
+function CParser:getctype(typename)
+	local ctype = self.ctypes[typename]
+	if not ctype then return end
+
+	if ctype.baseType
+	and not ctype.arrayCount
+	and not ctype.isPointer
+	then
+		local sofar = {}
+		-- if it has a baseType and no arrayCount then it's just a typedef ...
+		repeat
+			if sofar[ctype] then
+				error"found a typedef loop"
+			end
+			sofar[ctype] = true
+			ctype = ctype.baseType
+		until not (
+			ctype.baseType
+			and not ctype.arrayCount
+			and not ctype.isPointer
+		)
+	end
+	return ctype
+end
+
+function CParser:getptrtype(baseType)
+--DEBUG:print('getptrtype', baseType)
+	local ptrtypename = baseType.name..'*'
+--DEBUG:print('getptrtype ptrtypename', ptrtypename)
+	local ptrType = self:getctype(ptrtypename)
+	if ptrType then
+--DEBUG:print('...getptrtype found old', ptrType, ptrType == ctypes.void, ptrType==ctypes['void*'])
+		return ptrType
+	end
+	ptrType = CType{
+		baseType = baseType,
+		isPointer = true,
+		parser = self,
+	}
+--DEBUG:print('...getptrtype made new', ptrType)
+	return ptrType
+end
+
+function CParser:getArrayType(baseType, ar)
+	local ctype = self:getctype(baseType.name..'['..ar..']')
+--DEBUG:print('looking for ctype name', baseType.name..'['..ar..'], got', ctype)
+	-- if not then make the array-type
+	if not ctype then
+		ctype = CType{
+			parser = self,
+			baseType = baseType,
+			arrayCount = ar,
+		}
+	end
+	return ctype
+end
+
+
+
+
+
+local Parser = require 'parser.base.parser'
+local CParser = Parser:subclass()
+
+-- forward to __call
+function CParser:init(args)
+	
+	-- put types here ... for name
+	self.ctypes = {}
+
+	-- TODO put types in-order here
+
+	-- put var defs here
+	self.vars = {}
+
+	-- TOOD var defs in order
+
+	-- TODO function defs in order
+
+	self.anonEnumValues = table()
+
+	-- init ctypes ...
+	-- https://en.wikipedia.org/wiki/C_data_types
+	for _,name in ipairs(string.split(string.trim[[
+void
+bool
+char
+signed char
+unsigned char
+short
+short int
+signed short
+signed short int
+unsigned short
+unsigned short int
+int
+signed
+signed int
+unsigned
+unsigned int
+long
+long int
+signed long
+signed long int
+unsigned long
+unsigned long int
+long long
+long long int
+signed long long
+signed long long int
+unsigned long long
+unsigned long long int
+float
+double
+long double
+int8_t
+uint8_t
+int16_t
+uint16_t
+int32_t
+uint32_t
+int64_t
+uint64_t
+int_least8_t
+uint_least8_t
+int_least16_t
+uint_least16_t
+int_least32_t
+uint_least32_t
+int_least64_t
+uint_least64_t
+int_fast8_t
+uint_fast8_t
+int_fast16_t
+uint_fast16_t
+int_fast32_t
+uint_fast32_t
+int_fast64_t
+uint_fast64_t
+intptr_t
+uintptr_t
+intmax_t
+uintmax_t
+size_t
+ssize_t
+ptrdiff_t
+]], '\n')) do
+		CType{name=name, isPrimitive=true, parser=self}
+	end
+
+	self(args)
+end
+
+--[[
+obj(data)
+obj(args)
+args = table of:
+	data
+
+I'm using the same API style in preproc and here: successive calls to succesively parse content.
+
+Should I do it in my parser/ project as well?
+--]]
+function CParser:__call(args)
+	if type(args) == 'string' then
+		args = {data=args}
+	elseif type(args) ~= 'table' then
+		error("can't handle args")
+	end
+
+	local data = assert.index(args, 'data')
+
+	self:setData(data)
+end
+
+function CParser:buildTokenizer(data)
+	return CTokenizer(data)
+end
+
+-- parser/base/parser calls this after setData
+function CParser:parseTree()
+	-- unlike parser/base/parser, I'm not going to save the tree here
+
+	-- typedef ...
+	if self:canbe('typedef', 'keyword') then
+		local srctype
+		-- next is either a previously declared typename or 'struct'/'union' followed by a struct/union def
+		if self:canbe(nil, 'name') then
+			local prefix = self:parseSignedUnsignedShortLong()
+
+			-- TODO this won't handled `signed`, `unsigned` etc without the `int` at the end ...
+			local name = self.lasttoken
+			if prefix then name = prefix..' '..name end
+
+			srctype = assert(self:getctype(name), "couldn't find type "..name)
+			self:consume()
+		
+		-- typedef struct ...
+		-- typedef union ...
+		elseif self:canbe('struct', 'keyword') 
+		or self:canbe('union', 'keyword')
+		then
+			-- TODO this still could either be ...
+			--  ... a named struct declaration
+			--  ... an anonymous struct declaration
+			--  ... a 'struct ____' typename
+			-- and we can't know until after we read the '{'
+
+			local srctype = self:parseStruct(self.lasttoken == 'union')
+			assert(srctype)			
+		
+		-- typedef enum ...
+		elseif self:canbe('enum', 'keyword') then
+			local srctype = self:parseEnum()
+			assert(srctype)
+		end
+
+		while self:canbe('*', 'symbol') do
+			srctype = self:getptrtype(srctype)
+		end
+
+		self:mustbe(nil, 'name')
+		
+		-- make a typedef type
+		local ctype = CType{
+			name = self.lasttoken,
+			baseType = srctype,
+		}
+		self:mustbe(';', 'symbol')
+
+	-- struct ...
+	-- union ...
+	elseif self:canbe('struct', 'keyword')
+	or self:canbe('union', 'keyword')
+	then
+		local ctype = self:parseStruct(self.lasttoken == 'union')
+		self:mustbe(';', 'symbol')
+	elseif self:canbe('enum', 'keyword') then
+		local ctype = self:parseEnum()
+		self:mustbe(';', 'symbol')
+
+	-- extern ...
+	elseif self:canbe('extern', 'keyword') then
+		local ctypename = self:mustbe(nil, 'name')
+		local ctype = self:getctype(ctypename)
+
+		-- TODO properly parse variable definition, including function and function-pointer definitions
+		local name = self:mustbe(nil, 'name')
+		self:mustbe(';', 'symbol')
+	else
+		error{msg='unknown'}
+	end
+end
+
+function CParser:parseSignedUnsignedShortLong()
+	local prefix
+	if self:canbe('signed', 'name')
+	or self:canbe('unsigned', 'name')
+	then
+		prefix = self.lasttoken
+		self:consume()
+	end
+	
+	if self:canbe('short', 'name') then
+		prefix = prefix..' '..self.lasttoken
+		self:consume()
+	elseif self:canbe('long', 'name') then
+		prefix = prefix..' '..self.lasttoken
+		self:consume()
+		if self:canbe('long', 'name') then
+			prefix = prefix..' '..self.lasttoken
+			self:consume()
+		end
+	end
+	return prefix
+end
+
+-- parse a ffi.cast or ffi.new
+-- similar to struct but without the loop over multiple named vars with the same base type
+function CParser:parseType(allowVarArray)
+--DEBUG:print'parseType'
+
+	-- should these be keywords?
+	local signedness = self:parseSignedUnsignedShortLong()
+
+	--const-ness ... meh?
+	local const = self:canbe('const', 'keyword')
+
+	local structunion = self:canbe('struct', 'keyword') or self:canbe('union', 'keyword')
+
+	local name = self:mustbe(nil, 'name')
+	if structunion then
+		name = structunion..' '..name
+	end
+	if signedness then
+		name = signedness..' '..name
+	end
+
+--DEBUG:print('parseType name', name)
+	-- fields ...
+	-- TODO this should be 'parsetype' and work just like variable declarations
+	-- and should be interoperable with typedefs
+	-- except typedefs can't use comma-separated list (can they?)
+	local baseFieldType = assert(self:getctype(name), "couldn't find type "..name)
+--DEBUG:assert.eq(getmetatable(baseFieldType), CType)
+--DEBUG:print('parseType baseFieldType', baseFieldType)
+--DEBUG:print('does baseFieldType* exist?', ctypes[baseFieldType.name..'*'])
+	local fieldtype = baseFieldType
+	while self:canbe('*', 'symbol') do
+--DEBUG:print('...looking for ptr of type', fieldtype)
+		fieldtype = self:getptrtype(fieldtype)
+--DEBUG:print('...making ptr type', fieldtype)
+		-- const-ness ... meh?
+		local const = self:canbe('const', 'keyword')
+	end
+
+	while self:canbe('[', 'symbol') do
+		local count = self:canbe(nil, 'number')
+		if count then	
+			assert(count > 0, "can we allow non-positive-sized arrays?")
+		end
+		self:mustbe(']', 'symbol')
+		
+		assert(count, "aren't [] arrays just pointers?  or we have to error about size being missing?")
+
+		fieldtype = self:getArrayType(fieldtype, count)
+	end
+
+--DEBUG:print('parseType got', fieldtype)
+	return fieldtype
+end
+
+-- assumes 'struct' or 'union' has already been parsed
+-- doesn't assert closing ';' (since it could be used in typedef)
+function CParser:parseStruct(isunion)
+
+	local name = self:canbe(nil, 'name')
+	if name then
+		name = (isunion and 'union' or 'struct')..' '..name
+	end
+
+	if self:canbe('{', 'symbol') then
+		if not name then
+			error("struct/union expected name or {")
+		end
+
+		local ctype = self:getctype(name)
+		assert(ctype, "couldn't find type "..tostring(name))
+		-- TODO in the case of typedef calling this
+		-- the 'struct XXX' might not yet exist ...
+		-- hmm ...
+		return ctype
+	end
+
+	-- struct [name] { ...
+	local ctype = CType{
+		name = name,	-- auto-generate a name for the anonymous struct/union
+		fields = newtable(),
+		isunion = isunion,
+		parser = self,
+	}
+
+	while true do
+--DEBUG:print('field first token', token, tokentype)
+		if self:canbe('}', 'symbol') then 
+			break 
+		elseif self:canbe('struct', 'keyword') 
+		or self:canbe('union', 'keyword')
+		then
+			-- TODO
+			-- if the next token is a { then parse a stuct
+			-- if the next token is a name then ...
+			-- 	if the next after that is { then parse a struct
+			--  if the next after that is not then it's a "struct" typename...
+
+			-- nameless struct/union's within struct/union's ...
+			-- or even if they have names, the names should get ignored?
+			-- or how long does the scope of the name of an inner struct in C last?
+
+			local nestedtype = self:parseStruct(token == 'union')
+--DEBUG:assert.eq(getmetatable(nestedtype), CType)
+			ctype.fields:insert(Field{
+				name = '',
+				type = nestedtype,
+			})
+			-- what kind of name should I use for nameless nested structs?
+			self:mustbe(';', 'symbol')
+
+		elseif self:canbe(nil, 'name') then
+			-- should these be keywords?
+			local signedness = self:parseSignedUnsignedShortLong()
+			local const = self:canbe('const', 'keyword')
+			local name = self:canbe(nil, 'name')
+			if signedness then
+				name = signedness..' '..name
+			end
+
+			-- fields ...
+			-- TODO this should be 'parsetype' and work just like variable declarations
+			-- and should be interoperable with typedefs
+			-- except typedefs can't use comma-separated list (can they?)
+			local baseFieldType = assert(self:getctype(name), "couldn't find type "..name)
+--DEBUG:assert.eq(getmetatable(baseFieldType), CType)
+
+			while true do
+				local fieldtype = baseFieldType
+				while self:canbe('*', 'symbol') do
+					fieldtype = self:getptrtype(fieldtype)
+					-- const-ness ... meh?
+					self:canbe('const', 'keyword')
+				end
+
+				local fieldname = self:mustbe(nil, 'name')
+				-- can you have a variable named __attribute__ ?
+				if fieldname == '__attribute__' then
+					self:mustbe('(', 'symbol')
+					self:mustbe('(', 'symbol')
+					self:mustbe('packed', 'name')
+					self:mustbe(')', 'symbol')
+					self:mustbe(')', 'symbol')
+					
+					fieldname = self:mustbe(nil, 'name')
+				end
+
+				local field = Field{
+					name = fieldname,
+					type = fieldtype,
+				}
+				ctype.fields:insert(field)
+
+				while self:canbe('[', 'symbol') do
+					local count = self:nustbe(nil, 'number')
+					assert.gt(count, 0, "can we allow non-positive-sized arrays?")
+					self:mustbe('[', 'symbol')
+
+					-- TODO shouldn't we be modifying field.type to be an array-type with array 'count' ?
+					fieldtype = getArrayType(fieldtype, count)
+					field.type = fieldtype
+				end
+
+				if self:canbe(';', 'symbol') then
+					break
+				elseif self:canbe(',', 'symbol') then
+					error("expected , or ;, found "..tostring(tokentype).." "..tostring(token))
+				end
+			end
+		else
+			error("got end of string")
+		end
+	end
+
+	return ctype
+end
+
+-- TODO would be nice to treat enums as constants / define's ...
+-- using the ext.load shim layer maybe ...
+function CParser:parseEnum()
+	local name = self:canbe(nil, 'name')
+	if not self:canbe('{', 'symbol') then
+		assert(name, "enum expected name or {")
+		local ctype = assert(self:getctype(name), "couldn't find type "..tostring(name))
+		-- TODO in the case of typedef calling this
+		-- the 'enum XXX' might not yet exist ...
+		-- hmm ...
+		return ctype
+	end
+
+	local ctype
+	local valueDest
+	if name then
+		-- if it's enum XXX then do a typedef to the base enum type
+		ctype = CType{
+			parser = self,
+			name = name,
+			baseType = assert(ctypes.uint32_t),
+		}
+		ctype.isEnum = true
+		ctype.enumValues = table()
+		valueDest = ctype.enumValues
+	else
+		ctype = ctypes.int	-- default enum type?
+		valueDest = self.anonEnumValues
+	end
+
+	local value = 0
+	while true do
+		local name = self:mustbe(nil, 'name')
+		if self:canbe('=', 'symbol') then
+			value = self:mustbe(nil, 'number')
+			value = tonumber(value) or error("failed to parse enum as number: "..value)
+		end
+--DEBUG:print('setting enum '..tostring(name)..' = '..tostring(value))
+		
+		-- TODO if ctype had a name then specify these with it isntead of in the global pool
+		valueDest:insert{
+			name = name,
+			value = value,
+		}
+
+		value = value + 1
+
+		local gotComma = self:canbe(',', 'symbol')
+		if self:canbe('}', 'symbol') then break end
+
+		if not gotComma then error("expected , found "..tostring(token).." rest is "..tostring(str)) end
+	end
+
+	return ctype
+end
+
+return CParser 
