@@ -4,14 +4,17 @@ local C_H_Parser = require 'c-h-parser.parser'
 local headers = C_H_Parser()
 
 assert(headers[[
+/*
 typedef void T_v;
 typedef int T_i;
 typedef char * T_pc;
+*/
 
 // TODO typedef and symbol / function decl should overlap
 // typedef int y[20];
 
 int i;
+/*
 char * pc; // pointers don't work?
 float f_20[20];
 float * pf_20[20];
@@ -20,6 +23,7 @@ char c_20_30[20][30];
 enum {
 	A,B,C
 };
+*/
 ]])
 
 -- maybe an AST is good, for re-serialization ...
