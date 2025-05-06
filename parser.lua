@@ -250,80 +250,179 @@ All args are expected to be keywords.
 
 Returns a table with keys of each qualifier found.
 --]]
-function C_H_Parser:parseQualifiers(...)
-	local qualifiers = {}
-	local n = select('#', ...)
+function C_H_Parser:parseQualifiers(keywords, qualifiers)
+	qualifiers = qualifiers or {}
 	local found
 	repeat
 		found = nil
-		for i=1,n do
-			local q = select(i, ...)
-			if type(q) == 'string' then
-				if self:canbe(q, 'keyword') then
+		for _,keyword in ipairs(keywords) do
+			local keyword = select(i, ...)
+			if type(keyword) == 'string' then
+				if self:canbe(keyword, 'keyword') then
 					-- warning Wduplicate-decl-specifier
-					--assert(not qualifiers[q], {msg="warning duplciate '"..q.."' qualifier"})
-					qualifiers[q] = true
+					--assert(not qualifiers[keyword], {msg="warning duplciate '"..keyword.."' qualifier"})
+					qualifiers[keyword] = true
 					found = true
 				end
-			elseif type(q) == 'table' then
-				for _,subq in ipairs(q) do
-					if self:canbe(subq, 'keyword') then
+			elseif type(keyword) == 'table' then
+				for _,keywordOption in ipairs(keyword) do
+					if self:canbe(keywordOption, 'keyword') then
 						-- warning Wduplicate-decl-specifier
-						--assert(not qualifiers[q[1]], {msg="warning duplciate '"..q[1].."' qualifier"})
-						qualifiers[q[1]] = true
+						--assert(not qualifiers[keyword[1]], {msg="warning duplciate '"..keyword[1].."' qualifier"})
+						qualifiers[keyword[1]] = true
 						found = true
 						break
 					end
 				end
 			else
-				error("unknown arg type "..type(q))
+				error("unknown arg type "..type(keyword))
 			end
 		end
 	until not found 
 	return qualifiers
 end
 
-function C_H_Parser:parseStmt()
-	local qualifiers = self:parseQualifiers(
+function C_H_Parser:parseStmtQuals(qualifiers)
+	return self:parseQualifiers({
 		'static',
 		'extern',
-		{'inline', '__inline', '__inline__'}
-	)
-
-	local isTypedef = self:canbe('typedef', 'keyword')
-	assert(not isTypedef or not qualifiers.static, {msg="can't use typedef and static"})
-	assert(not isTypedef or not qualifiers.extern, {msg="can't use typedef and extern"})
-	assert(not isTypedef or not qualifiers.inline, {msg="can't use typedef and inline"})
-	
-	--qualifiers.static	-- function or variable
-	--qualifiers.extern	-- function only 
-	--qualifiers.inline	-- function only
-
-	self:parseDecls()
+		{'inline', '__inline', '__inline__'},
+		'const',
+		'volatile',
+	}, qualifiers)
 end
 
-function C_H_Parser:parseDecls()
-	local startType = self:parseStartType()
+function C_H_Parser:parseStmt()
+	
+	-- lhs of the type name ...
+	local stmtQuals = self:parseStmtQuals()
+	local isTypedef = self:canbe('typedef', 'keyword')
+	
+	assert(not isTypedef or not stmtQuals.static, {msg="cannot combine static and typedef"})
+	assert(not isTypedef or not stmtQuals.extern, {msg="cannot combine extern and typedef"})
+	assert(not isTypedef or not stmtQuals.inline, {msg="cannot combine inline and typedef"})
+	
+	--stmtQuals.static	-- function or variable
+	--stmtQuals.extern	-- function only 
+	--stmtQuals.inline	-- function only
+	--stmtQuals.volatile works on all, but only works once on the 'startType' of declarations.
 
-	if self:parseField() then
+	-- forward on 'const' and 'volatile' to the type-qualifiers
+
+	self:parseDecls(stmtQuals)
+end
+
+--[[
+This is a combination of `stmtDecls` and `structDecls`
+parse lhs start-type of our decls 
+then parse added quals
+	- if it's a stmt then parse stmt-quals (and append to the qual list given, if there)
+	- if it's a struct then parse struct-decls , which is just 'const'
+--]]
+function C_H_Parser:parseDecls(quals, isStructDecl)
+	
+	-- parse the start of the type
+	-- notice that stmt quals can still come after the name, so long as they are before the comma
+	-- in fact, of all stmt-qualifiers, it seems the subsequent types of the decls only cares about 'const'
+	local startType = self:parseStartType(quals)
+
+	if isStructDecl then
+		assert(not quals)
+		quals = self:parseStructDeclQuals()
+	else
+		-- More stmt qualifeirs can come after the first type.
+		-- Yes you can define a struct then do 'volatile', so long as you haven't done any *'s or names
+		-- You can also do `int const volatile static a, b, c` and the const goes to all subsequent a,b,c;
+		--  evne though the const is for the fields while the volatile static is for the statement.	
+		self:parseStmtQuals(quals)
+	end
+
+	-- see if we're using a const type
+	if quals.const then
+		startType = self:getconsttype(startType)
+	end
+
+	if self:parseSubDecl(startType) then
 		self:mustbe(',', 'symbol')
 		repeat
-			self:parseFieldName(startType)
+			self:parseSubDecl(startType)
 		until not self:canbe(',', 'symbol')
 	end
 end
 
-function C_H_Parser:parseStartType()
-	-- did our coder get lazy and put a const on the lhs instead of the rhs where it belongs?
-	local isConst = self:canbe('const', 'keyword')
+function C_H_Parser:parseStructDeclQuals()
+	return self:parseQualifiers{'const'}
+end
+
+function C_H_Parser:parseStartType(isConst)
+	if self:canbe('struct', 'keyword')
+	or self:canbe('union', 'keyword')
+	then
+		local isUnion = self.lasttoken == 'union'
+		local structName = self:canbe(nil, 'name')
+		-- now "struct "..structName is our type that we should test for collision.
+		if self:canbe('{', 'symbol') then
+			self:parseDecls(nil, true)	-- 2nd 'true' means struct-decls, means only look for 'const' qualifier and not the rest (volatile extern etc)
+			self:mustbe(';', 'symbol')
+		end
+	elseif self:canbe('enum', 'keyword') then
+		local enumName = self:canbe(nil, 'name')
 	
-	-- now parse the type
-	local startType = self:parseType()
+		local ctype, fieldDest
+		if enumName then
+			-- TODO maybe not define the type here, 
+			-- but instead return the enum name and enum values to whoever called this
+			-- and then based on 'typedef' or not, define the type versus look the type up.
+			ctype = self:node('_ctype', {
+				parser = self,
+				name = enumName,
+				baseType = assert(self.ctypes.uint32_t),
+				isEnum = true,
+			})
+			ctype.enumValues = table()	-- TODO in ctor
+			fieldDest = ctype.enumValues
+		else
+			fieldDest = self.anonEnumValues
+		end
 
-	-- now add const's or *'s
-	isConst = self:canbe('const', 'keyword') or isConst
-	startType = self:getConstType(startType)
+		if self:canbe('{', 'symbol') then
+			-- define a new enum type
+			local enumValue = 0
+			local first = true
+			repeat
+				if not first then
+					self:mustbe(',', 'symbol')
+				end
+				first = false
+				
+				local enumField = self:canbe(nil, 'name')
+				if self:canbe('=', 'symbol') then
+					-- TODO handle enum expressions
+					enumValue = self:mustbe(nil, 'number')
+				end
+			
+				fieldDest:insert(self:node('_enumdef', {
+					parser = self,
+					name = enumName,
+					value = enumValue,
+				}))
+				enumValue = enumValue + 1
+			until false
+			self:canbe(',', 'symbol')
+			self:mustbe('}', 'symbol')
+		else
+			-- expect the type to exist
+		end
+	else
+		local typename = self:mustbe(nil, 'name')
+		-- this typename is going to be the type of whatever comes next -- symbol, or typedef.
+		-- so it must exist
+		return assert(self:getctype(typename), {msg="unknown type "..tostring(typename)})
+	end
+end
 
+function C_H_Parser:parseSubDecl(startType)
+	-- once we get our * then it and all subsequent *'s and const's only applies to this subdecl
 	while self:canbe('*', 'symbol') do
 		startType = self:getPtrType(startType)
 		if self:canbe('const', 'keyword') then
@@ -331,19 +430,17 @@ function C_H_Parser:parseStartType()
 		end
 	end
 
+	local isFuncPtrName = self:canbe('(', 'symbol') 
+	-- I could make a separte rule or three for this but nah ... just if's for ( and )
+	local name = self:c
+
+	if isFuncPtrName then
+	end
+
 	return startType
 end
 
-function C_H_Parser:parseType()
-	if self:canbe('struct', 'keyword')
-	or self:canbe('union', 'keyword')
-	then
-	elseif self:canbe('enum', 'keyword') then
-	else
-		self:mustbe(nil, 'name')
-	end
-end
-
+function idk()
 	repeat
 		-- unlike parser/base/parser, I'm not going to save the tree here
 		-- typedef ...
@@ -635,65 +732,6 @@ function C_H_Parser:parseStruct(isunion)
 		end
 	end
 
-	return ctype
-end
-
--- TODO would be nice to treat enums as constants / define's ...
--- using the ext.load shim layer maybe ...
-function C_H_Parser:parseEnum()
-	local name = self:canbe(nil, 'name')
-
-	if not self:canbe('{', 'symbol') then
-		assert(name, "enum expected name or {")
-		local ctype = assert(self:getctype(name), "couldn't find type "..tostring(name))
-		-- TODO in the case of typedef calling this
-		-- the 'enum XXX' might not yet exist ...
-		-- hmm ...
-		return ctype
-	end
-
-	local ctype
-	local valueDest
-	if name then
-		-- if it's enum XXX then do a typedef to the base enum type
-		ctype = self:node('_ctype', {
-			parser = self,
-			name = name,
-			baseType = assert(self.ctypes.uint32_t),
-		})
-		ctype.isEnum = true
-		ctype.enumValues = table()
-		valueDest = ctype.enumValues
-	else
-		ctype = self.ctypes.int	-- default enum type?
-		valueDest = self.anonEnumValues
-	end
-
-	local value = 0
-	if not self:canbe('}', 'symbol') then
-		while true do
-			local name = self:mustbe(nil, 'name')
-			if self:canbe('=', 'symbol') then
-				value = self:mustbe(nil, 'number')
-				value = tonumber(value) or error("failed to parse enum as number: "..value)
-			end
---DEBUG:print('setting enum '..tostring(name)..' = '..tostring(value))
-
-			-- TODO if ctype had a name then specify these with it isntead of in the global pool
-			valueDest:insert(self:node('_enumdef', {
-				parser = self,
-				name = name,
-				value = value,
-			}))
-
-			value = value + 1
-
-			local gotComma = self:canbe(',', 'symbol')
-			if self:canbe('}', 'symbol') then break end
-
-			if not gotComma then error("expected , found "..tostring(token).." rest is "..tostring(str)) end
-		end
-	end
 	return ctype
 end
 

@@ -47,40 +47,64 @@ end
 --[[
 bnf?
 
-stmt:: [{['static' | 'inline' | 'extern']} | 'typedef'] decls ';';
+stmt:: [
+		stmtQuals
+		| 'typedef'
+	] stmtDecls ';';
 
-# like int a, *b, c[2], d; makes int a, int*b, int[2]c, int d;
-names are optional too.
-decls::
-	startType 
+stmtQuals::
+	{'static' | 'inline' | 'extern' | 'const' | 'volatile'}
+
+# putting const volatile etc left or right of the start type name will contribute to the stmt-decl-type.
+# but as soon as you put a *, it enters into the per-subDecl's type
+# ... maybe merge this with `stmt`
+stmtDecls::
+	startType
+	stmtQuals
 	[
-		field 
-		{',' field}
+		subDecl
+		{',' subDecl}
 	]
 
-startType::
-	['const'] type ['const'] {'*' ['const']} 
+# This rule is for statements or struct/union fields.
+# Like int a, *b, c[2], d; makes int a, int*b, int[2]c, int d;
+# names are optional too.
+structDecls::
+	startType	
+	structDeclQuals
+	[
+		subDecl 
+		{',' subDecl}
+	]
 
-type::
+# struct decls can lead with only 'const' and it applies to all sub-decls
+structDeclQuals::
+	['const']
+
+startType::
 	(
-		('struct' | 'union') [name] ['{' {decls ';'} '}']
+		('struct' | 'union') [name] [
+			'{' 
+				{ structDecls ';'} 
+			'}'
+		]
 	) |
 	(
-		'enum' [name] '{'
+		'enum' [name] '{' [
 			name ['=' number]
 			{',' name ['=' number]}
 			[',']
-		'}'
+		] '}'
 	)
 	name
 	;
 
-# array on the name means the defining field is an array
+# array on the name means the defining subDecl is an array
 # array on the end of this means the type is an array type.
-field::
+subDecl::
 	{'*' ['const']}
 	(
-		name [array]
+		[name] [array]
 		[funcname] | 
 	)
 	['(' arglist ')']
@@ -89,7 +113,7 @@ field::
 	;
 
 funcname::
-	'(' '*' name [array] ')'
+	'(' '*' [name] [array] ')'
 
 array::
 	{'[' number ']'}
