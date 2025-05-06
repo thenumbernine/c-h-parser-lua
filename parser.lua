@@ -647,30 +647,20 @@ function C_H_Parser:parseFuncArg()
 end
 
 function C_H_Parser:parseSubDecl4(startType, isStructDecl, isFuncArg)
---DEBUG:print('C_H_Parser:parseCPSubDecl', startType, isStructDecl, isFuncArg)
---DEBUG:assert(startType)
-	-- I could make a separte rule or three for this but nah ... just if's for ( and )
-	local name
-	if isFuncArg then
-		name = self:canbe(nil, 'name')
-	else
-		name = self:mustbe(nil, 'name')
-	end
+	local subdecl = self:parseSubDecl5(startType, isStructDecl, isFuncArg)
 
 	if isStructDecl
-	and self:canbe(':', 'symbol')
+	and self:canbe(':', 'symbol') 
 	then
 		local bitfield = self:mustbe(nil, 'number')
-		startType = self:getBitFieldType(startType, bitfield)
+		subdecl.type = self:getBitFieldType(subdecl.type, bitfield)
 	end
-	
-	local subdecl = self:node('_subdecl', {
-		parser = self,
-		isFuncArg = isFuncArg,
-		isStructDecl = isStructDecl,
-		name = name,
-		type = startType,
-	})
+
+	return subdecl
+end
+
+function C_H_Parser:parseSubDecl5(startType, isStructDecl, isFuncArg)
+	local subdecl = self:parseSubDecl6(startType, isStructDecl, isFuncArg)
 
 	-- TODO where to process arrays ...
 	-- ... they can nest in parenthesis
@@ -688,10 +678,34 @@ function C_H_Parser:parseSubDecl4(startType, isStructDecl, isFuncArg)
 		self:mustbe(']', 'symbol')
 	end
 
-	return self:node('_var', {
-		parser = self,
-		subdecl = subdecl,
-	})
+	return subdecl
+end
+
+function C_H_Parser:parseSubDecl6(startType, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseCPSubDecl', startType, isStructDecl, isFuncArg)
+--DEBUG:assert(startType)
+	-- I could make a separte rule or three for this but nah ... just if's for ( and )
+	
+	local name = self:canbe(nil, 'name')
+
+	-- if not isFuncArg then must be name, but here it might be another subexpression so ...
+	-- TODO my recursion order is messed up I'm sure
+	if name or isFuncArg then
+		local subdecl = self:node('_subdecl', {
+			parser = self,
+			isFuncArg = isFuncArg,
+			isStructDecl = isStructDecl,
+			name = name,
+			type = startType,
+		})
+
+		return self:node('_var', {
+			parser = self,
+			subdecl = subdecl,
+		})
+	end
+
+	return self:parseSubDecl(startType, isStructDecl, isFuncArg)
 end
 
 return C_H_Parser
