@@ -346,8 +346,6 @@ function C_H_Parser:parseStmt()
 		-- insert all as typedefs
 		for _,decl in ipairs(decls) do
 			-- add typedefs
-print('decl type', decl.subdecl.type.name)			
-print('decl name', decl.subdecl.name)			
 			self.declTypes:insert(self:node('_ctype', {
 				parser = self,
 				isTypedef = true,
@@ -363,7 +361,21 @@ print('decl name', decl.subdecl.name)
 			if self.ast._fwdDeclStruct:isa(decl) then
 				self.declTypes:insert(decl)
 			else
-				self.symbolsInOrder:insert(decl)
+--[[
+if we get a 'struct ${name};' single line then it's type code and goes up top.
+but if we get 'struct ${name} *declName1;' (notice ptr, because you can't do this with a non-ptr, since the struct is fwd-declared in the same line as the variable-declaration)
+... then it's symbol code ...
+... but because it contains a new type in the name, it should still go in the type code.
+--]]
+				local baseType = decl.subdecl.type:getBaseMostType()
+				if baseType.isStruct
+				and not baseType.fields
+				then
+					self.declTypes:insert(decl)
+				else
+					
+					self.symbolsInOrder:insert(decl)
+				end
 			end
 		end
 	end

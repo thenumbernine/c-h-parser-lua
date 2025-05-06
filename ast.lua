@@ -184,6 +184,11 @@ function _ctype:serialize(out, varname)
 	end
 end
 
+function _ctype:getBaseMostType()
+	if not self.baseType then return self end
+	return self.baseType:getBaseMostType()
+end
+
 local _symbol = nodeclass'symbol'
 function _symbol:init(args)
 	self.type = assert.is(assert.index(args, 'type'), _ctype)
