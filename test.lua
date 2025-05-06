@@ -24,6 +24,8 @@ struct FwdStructWithVar *fsv2;
 //struct namedStruct2 {};
 //struct {} anonStructVar;
 //struct namedStructWith {} namedStructVar;
+
+int if1();
 ]])
 
 --[=[

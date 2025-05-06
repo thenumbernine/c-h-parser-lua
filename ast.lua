@@ -81,7 +81,7 @@ function _ctype:init(args)
 			elseif args.funcArgs then
 				-- what should name even be ...
 				-- why am I even using name ...
-				self.name = self.name .. funcArgsToC(self.funcArgs)
+				self.name = args.baseType.name .. funcArgsToC(args.funcArgs)
 			else
 				error("_ctype:init with baseType, isn't arrayCount, isn't isPointer, isn't isConst, isn't isVolatile ...")
 			end

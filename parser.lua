@@ -25,13 +25,13 @@ function C_H_Tokenizer:initSymbolsAndKeywords()
 
 	-- self.keywords lets the tokenizer flag if this is a reserved word or not, that's all
 	for w in ([[
-const enum extern 
+const enum extern
 struct union
 typedef
 static
 extern
-inline 
-__inline 
+inline
+__inline
 __inline__
 volatile
 	]]):gmatch'%w+' do
@@ -307,7 +307,7 @@ function C_H_Parser:parseQualifiers(keywords, qualifiers)
 				error("unknown arg type "..type(keyword))
 			end
 		end
-	until not found 
+	until not found
 	return qualifiers
 end
 
@@ -327,13 +327,13 @@ function C_H_Parser:parseStmt()
 	-- lhs of the type name ...
 	local stmtQuals = self:parseStmtQuals()
 	local isTypedef = self:canbe('typedef', 'keyword')
-	
+
 	assert(not isTypedef or not stmtQuals.static, {msg="cannot combine static and typedef"})
 	assert(not isTypedef or not stmtQuals.extern, {msg="cannot combine extern and typedef"})
 	assert(not isTypedef or not stmtQuals.inline, {msg="cannot combine inline and typedef"})
-	
+
 	--stmtQuals.static	-- function or variable
-	--stmtQuals.extern	-- function only 
+	--stmtQuals.extern	-- function only
 	--stmtQuals.inline	-- function only
 
 	-- forward on 'const' and 'volatile' to the type-qualifiers
@@ -362,7 +362,11 @@ function C_H_Parser:parseStmt()
 				self.declTypes:insert(decl)
 			else
 --[[
-if we get a 'struct ${name};' single line then it's type code and goes up top.
+NOTICE this is very structly ffi-binding specific.
+(maybe I should put tehse declarations into their own list? type+fwddecl's ...
+ ... but I want them in-order with types ...
+ ... TODO this is another good raeson to go back to storing all in an AST tree, in-order ...)
+If we get a 'struct ${name};' single line then it's type code and goes up top.
 but if we get 'struct ${name} *declName1;' (notice ptr, because you can't do this with a non-ptr, since the struct is fwd-declared in the same line as the variable-declaration)
 ... then it's symbol code ...
 ... but because it contains a new type in the name, it should still go in the type code.
@@ -373,7 +377,6 @@ but if we get 'struct ${name} *declName1;' (notice ptr, because you can't do thi
 				then
 					self.declTypes:insert(decl)
 				else
-					
 					self.symbolsInOrder:insert(decl)
 				end
 			end
@@ -383,7 +386,7 @@ end
 
 --[[
 This is a combination of `stmtDecls` and `structDecls`
-parse lhs start-type of our decls 
+parse lhs start-type of our decls
 then parse added quals
 	- if it's a stmt then parse stmt-quals (and append to the qual list given, if there)
 	- if it's a struct then parse struct-decls , which is just 'const'
@@ -401,7 +404,7 @@ function C_H_Parser:parseDecls(quals, isStructDecl, isFuncArg)
 		-- More stmt qualifeirs can come after the first type.
 		-- Yes you can define a struct then do 'volatile', so long as you haven't done any *'s or names
 		-- You can also do `int const volatile static a, b, c` and the const goes to all subsequent a,b,c;
-		--  evne though the const is for the fields while the volatile static is for the statement.	
+		--  evne though the const is for the fields while the volatile static is for the statement.
 		self:parseStmtQuals(quals)
 	end
 
@@ -437,12 +440,12 @@ function C_H_Parser:parseDecls(quals, isStructDecl, isFuncArg)
 		local decl = self:parseSubDecl(startType, isStructDecl, isFuncArg)
 		decls:insert(decl)
 
-		-- if it's not a structDecl or a funcArg then this is a stmt decl 
+		-- if it's not a structDecl or a funcArg then this is a stmt decl
 		--  so save the stmt-qualifiers
 		if not (isStructDecl or isFuncArg) then
 			decl.stmtQuals = quals
 		end
-		
+
 		-- if isFuncArg then don't handle multiple names after the type
 		if isFuncArg then break end
 	until not self:canbe(',', 'symbol')
@@ -468,7 +471,7 @@ function C_H_Parser:parseStartType()
 				local quals = self:parseCVQuals()
 				-- 2nd 'true' means struct-decls, means only look for 'const' qualifier and not the rest (volatile extern etc)
 				-- 3rd 'false' means not a function-arg.  function-args can only have one name after the startType, not multiple.
-				local decls = self:parseDecls(quals, true, false)	
+				local decls = self:parseDecls(quals, true, false)
 				fields:append(assert(decls))
 				self:mustbe(';', 'symbol')
 			end
@@ -494,10 +497,10 @@ function C_H_Parser:parseStartType()
 		return ctype
 	elseif self:canbe('enum', 'keyword') then
 		local enumName = self:canbe(nil, 'name')
-	
+
 		local ctype, fieldDest
 		if enumName then
-			-- TODO maybe not define the type here, 
+			-- TODO maybe not define the type here,
 			-- but instead return the enum name and enum values to whoever called this
 			-- and then based on 'typedef' or not, define the type versus look the type up.
 			ctype = self:node('_ctype', {
@@ -521,13 +524,13 @@ function C_H_Parser:parseStartType()
 					self:mustbe(',', 'symbol')
 				end
 				first = false
-				
+
 				local enumField = self:canbe(nil, 'name')
 				if self:canbe('=', 'symbol') then
 					-- TODO handle enum expressions
 					enumValue = self:mustbe(nil, 'number')
 				end
-			
+
 				fieldDest:insert(self:node('_enumdef', {
 					parser = self,
 					name = enumName,
@@ -584,13 +587,13 @@ function C_H_Parser:parseSubDecl(startType, isStructDecl, isFuncArg)
 	-- ... but how to tell function-args from parenthesis?
 	local func
 	if self:canbe('(', 'symbol') then
-		
+
 		-- if we're not parsing a func-arg then we'll want our subdecl to have a name
 		-- becuase functions all need names.
 		if not isFucnArg then
 			assert(subdecl.name, {msg="function needs a name"})
 		end
-		
+
 		local funcArgs = table()
 		local first = true
 		while not self:canbe(')', 'symbol') do
@@ -602,7 +605,7 @@ function C_H_Parser:parseSubDecl(startType, isStructDecl, isFuncArg)
 			funcArgs:insert(self:parseFuncArg())
 		end
 
-		assert(not baseType.funcArgs, {msg="can't define a function of a function, right?  It needs to be a function pointer, right?"})
+		assert(not subdecl.type.funcArgs, {msg="can't define a function of a function, right?  It needs to be a function pointer, right?"})
 		-- TODO should I even od this?  how about a unique new funcType node? same with arrayType, ptrType, constType, structType, enumType, etc ...
 		-- but what about unique type name registration and caching ...
 		subdecl.type = self:node('_ctype', {
@@ -619,10 +622,10 @@ function C_H_Parser:parseSubDecl(startType, isStructDecl, isFuncArg)
 		})
 	end
 
-	-- TODO where to process arrays ... 
+	-- TODO where to process arrays ...
 	-- ... they can nest in parenthesis
 	-- ... but if we have any function-args in the overall decl
-	-- ... ... then we get an error if the array is anywhere except in the innermost parenthesis after the name. 
+	-- ... ... then we get an error if the array is anywhere except in the innermost parenthesis after the name.
 	if self:canbe('[', 'symbol') then
 		if func then
 			-- but honestly, if this is supposed to be the array-part of the function, then my parser has a problem.
@@ -638,7 +641,7 @@ function C_H_Parser:parseSubDecl(startType, isStructDecl, isFuncArg)
 	end
 
 	local var
-	if not func then 
+	if not func then
 		var = self:node('_var', {
 			parser = self,
 			subdecl = subdecl,
@@ -651,14 +654,14 @@ end
 function C_H_Parser:parseFuncArg()
 	-- funcArg:
 	local quals = self:parseCVQuals()	-- see if there's a leading 'const'
-	-- arg 2 true = struct-type = only look for 'const' right of the type, not 'volatile', 'static', 'inline'.  
+	-- arg 2 true = struct-type = only look for 'const' right of the type, not 'volatile', 'static', 'inline'.
 	-- arg 3 false = function-arg = only allow one name (and with an optional name at that), not multiple `int a,b,c`'s
-	return self:parseDecls(quals, true, true)	
+	return self:parseDecls(quals, true, true)
 end
 
 function C_H_Parser:parseCPSubDecl(ctype, isFuncArg, isStructDecl)
 --DEBUG:print('C_H_Parser:parseCPSubDecl', ctype, isFuncArg, isStructDecl)
---DEBUG:assert(ctype)	
+--DEBUG:assert(ctype)
 	-- I could make a separte rule or three for this but nah ... just if's for ( and )
 	local name
 	if isFuncArg then
@@ -667,7 +670,7 @@ function C_H_Parser:parseCPSubDecl(ctype, isFuncArg, isStructDecl)
 		name = self:mustbe(nil, 'name')
 	end
 
-	if isStructDecl 
+	if isStructDecl
 	and self:canbe(':', 'symbol')
 	then
 		local bitfield = self:mustbe(nil, 'number')
