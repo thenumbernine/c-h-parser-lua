@@ -39,10 +39,10 @@ function _field:init(args)
 	self.name = assert.type(assert.index(args, 'name'), 'string')
 	self.type = assert.is(assert.index(args, 'type'), _ctype)
 end
-function _field:serialize(consume)
-	self.type:serialize(consume)
+function _field:serialize(out)
+	self.type:serialize(out)
 	assert(self.name, 'some fields are anonymous...')
-	consume(self.name)
+	out(self.name)
 end
 
 --[[
@@ -76,6 +76,10 @@ function _ctype:init(args)
 				self.name = args.baseType.name..'['..args.arrayCount..']'
 			elseif args.isPointer then
 				self.name = args.baseType.name..'*'
+			elseif args.isConst then
+				-- TODO don't use isConst and isPointer in the same ctype?
+				-- or names might get mixed up or something? idk
+				self.name = args.baseType.name..' const'
 			else
 				error("???")
 			end
@@ -94,6 +98,7 @@ function _ctype:init(args)
 	self.fields = args.fields
 	self.isTypedef = args.isTypedef
 	self.isEnum = args.isEnum
+	self.isConst = args.isConst
 	self.isunion = args.isunion
 	self.baseType = args.baseType
 	self.arrayCount = args.arrayCount
@@ -116,42 +121,42 @@ function _ctype:init(args)
 --DEBUG:print('setting ctype['..self.name..'] = '..tostring(self))
 end
 
-function _ctype:serialize(consume, varname)
+function _ctype:serialize(out, varname)
 	-- TODO should a ctype be a typedef?  nah?  esp with name being dif things
 	if self.isTypedef then
-		consume'typedef'
-		self.baseType:serialize(consume)
-		consume(self.name)
+		out'typedef'
+		self.baseType:serialize(out)
+		out(self.name)
 	elseif self.name then
 --[[ use the stored name		
-		consume(self.name)
+		out(self.name)
 --]]
 -- [[ regenerate - same as in _ctype:init ... consoldate
 		-- if it's a pointer type ...
 		if self.baseType then
 			if self.arrayCount then
-				self.baseType:serialize(consume, varname)
-				consume'['
-				consume(self.arrayCount)
-				consume']'
+				self.baseType:serialize(out, varname)
+				out'['
+				out(self.arrayCount)
+				out']'
 			elseif self.isPointer then
-				consume(self.baseType.name)
-				consume'*'
+				out(self.baseType.name)
+				out'*'
 				if varname then
-					consume(varname)
+					out(varname)
 				end
 			else
 				error("???")
 			end
 		else
-			consume(self.name)	-- anonymous here?
+			out(self.name)	-- anonymous here?
 			if varname then
-				consume(varname)
+				out(varname)
 			end
 		end
 --]]
 	else
-		consume'#ERROR'
+		out'#ERROR'
 	end
 end
 
@@ -160,8 +165,8 @@ function _symbol:init(args)
 	self.type = assert.is(assert.index(args, 'type'), _ctype)
 	self.name = assert.type(assert.index(args, 'name'), 'string')
 end
-function _symbol:serialize(consume)
-	self.type:serialize(consume, self.name)
+function _symbol:serialize(out)
+	self.type:serialize(out, self.name)
 end
 
 -- this and symbol has a bit of overlap - this is typeless - symbol is valueless
@@ -170,11 +175,59 @@ function _enumdef:init(args)
 	self.name = assert.type(assert.index(args, 'name'), 'string')
 	self.value = assert.type(assert.index(args, 'value'), 'number')	-- number?  or expression?  or name?
 end
-function _enumdef:serialize(consume)
-	consume(self.name)
-	consume'='
-	consume(self.value)
+function _enumdef:serialize(out)
+	out(self.name)
+	out'='
+	out(self.value)
 end
 
+--[[
+this is half of a declaration.
+the other half is the type
+this is created and returned to the rest for creating things like
+- symbols declarations (variables, functions)
+- struct fields
+- function args
+--]]
+local _subdecl = nodeclass'subdecl'
+function _subdecl:init(args)
+	self.parser = assert.index(args, 'parser')
+	self.isFuncArg = args.isFuncArg	-- does it matter?
+	self.isStructDecl = args.isStructDecl	-- does it matter?
+	self.name = args.name			-- optional for isFuncArg
+	if not (self.isFuncArg) then
+		-- technically anonymous declarations just give you warnings that nothing is being defined...
+		assert(self.name, "expected name")
+	end
+	self.type = assert.index(args, 'type')
+end
+function _subdecl:serialize(out)
+	self.type:serialize(out)
+	if self.name then out(self.name) end
+end
+
+local _func = nodeclass'func'
+function _func:init(args)
+	self.parser = assert.index(args, 'parser')
+	self.subdecl = assert.index(args, 'subdecl')
+	self.args = assert.index(args, 'args')
+end
+function _func:serialize(out)
+	self.subdecl:serialize(out)
+	out'('
+	for _,arg in ipairs(self.args) do
+		arg:serialize(out)
+	end
+	out')'
+end
+
+local _var = nodeclass'var'
+function _var:init(args)
+	self.parser = assert.index(args, 'parser')
+	self.subdecl = assert.index(args, 'subdecl')
+end
+function _var:serialize(out)
+	self.subdecl:serialize(out)
+end
 
 return ast

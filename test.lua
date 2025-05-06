@@ -4,6 +4,11 @@ local C_H_Parser = require 'c-h-parser.parser'
 local headers = C_H_Parser()
 
 assert(headers[[
+int i;
+]])
+
+--[=[
+assert(headers[[
 /*
 typedef void T_v;
 typedef int T_i;
@@ -25,6 +30,7 @@ enum {
 };
 */
 ]])
+--]=]
 
 -- maybe an AST is good, for re-serialization ...
 print'typedefs:'
@@ -49,7 +55,7 @@ bnf?
 
 stmt:: [
 		stmtQuals
-		| 'typedef'
+		| 'typedef'			# can't have typedef and stmt-quals (excpet const qual, which is really a subdecl qual, which it's in structDeclQuals)
 	] stmtDecls ';';
 
 stmtQuals::
@@ -71,21 +77,23 @@ stmtDecls::
 # names are optional too.
 structDecls::
 	startType	
-	structDeclQuals
-	[
-		subDecl 
-		{',' subDecl}
-	]
-
-# struct decls can lead with only 'const' and it applies to all sub-decls
-structDeclQuals::
-	['const']
+	
+	# if 'const' also goes in subDecl then I can remove this one rule-expr right?
+	# but likewise, if structDecls and stmtDecls overlaps then this can harmlessly go here.
+	structDeclQuals		# struct fields can have proceeding 'const' quals only, no other quals.
+	
+	[ subDecl {',' subDecl}]
+	;
 
 startType::
 	(
 		('struct' | 'union') [name] [
 			'{' 
-				{ structDecls ';'} 
+				{ 
+					structDeclQuals		# struct fields can have preceding 'const's only, no other quals
+					structDecls 
+					';'
+				}
 			'}'
 		]
 	) |
@@ -99,6 +107,8 @@ startType::
 	name
 	;
 
+structDeclQuals:: ['const'] ;
+
 # array on the name means the defining subDecl is an array
 # array after function args means we're returning an array - which is an error.
 # array before function args but outside parenthesis of a function-def means an array-of-functions which is bad.
@@ -107,17 +117,34 @@ subDecl::
 	'(' subDecl ')' |
 	'*' subDecl |
 	'const' subDecl |
-	subDecl array |		# where does the array rule go?
+	
+	# arrays or function-args can go anywhere in the parenthesis list.
+	# so long as they are rhs of the name.
+	# but in all the parenthesis-list, only one function-arg list can exist.
+	# and if any function-arg list exists then any arrays can only go in the inner-most parenthesis next to the name.
+	subDecl (					# function-args or array but not both.
+		[
+			'(' [
+				funcArg {',' funcArg}
+			] ')'
+		] |
+		{'[' number ']'}		# where does the array rule go?  in all the decl, don't allow arrays if function-args were ever found, unless the array is next to the inner-most name ... smh C ...
+	) |
+	
 	cpSubDecl
 	;
 
 # subDecl for stmtDecl or structDecl needs a name, subDecl for funcArg doesn't.
-cpSubDecl::
-	name
-	[':' number]			# NOTICE bitfields only for subDecls of structs...
-	;
+# NOTICE bitfields only for subDecls of structs...
+cpSubDecl:: name [':' number];
 
-array::
-	{'[' number ']'}
-	
+# really this is just 
+# 1) stmtDecls
+# 2) ... but enforcing 'structDeclQuals' i.e. non-stmt-decl-quals, i.e. 'const' only ... tho without stmt decl quals you can even avoid this check and merge it into the subDecl rule...
+# 3) ... and without multiple names per type
+funcArg::
+	structDeclQuals			# really this rule should be named nonStmt decl quals, for struct and func-args
+	startType
+	subDecl					# NOTICE for this one, via funcarg, name is optiona.
+
 --]]

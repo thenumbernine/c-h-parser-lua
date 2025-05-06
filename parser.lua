@@ -58,7 +58,7 @@ local C_H_Parser = Parser:subclass()
 C_H_Parser.ast = require 'c-h-parser.ast'
 
 -- follow typedef baseType lookups to the origin and return that
-function C_H_Parser:getctype(typename)
+function C_H_Parser:getCType(typename)
 	local ctype = self.ctypes[typename]
 	if not ctype then return end
 
@@ -77,13 +77,13 @@ function C_H_Parser:getctype(typename)
 	return ctype
 end
 
-function C_H_Parser:getptrtype(baseType)
---DEBUG:print('getptrtype', baseType)
-	local ptrtypename = baseType.name..'*'
---DEBUG:print('getptrtype ptrtypename', ptrtypename)
-	local ptrType = self:getctype(ptrtypename)
+function C_H_Parser:getPtrType(baseType)
+--DEBUG:print('getPtrType', baseType)
+	local typename = baseType.name..'*'
+--DEBUG:print('getPtrType typename', typename)
+	local ptrType = self:getCType(ptrtypename)
 	if ptrType then
---DEBUG:print('...getptrtype found old', ptrType, ptrType == ctypes.void, ptrType==ctypes['void*'])
+--DEBUG:print('...getPtrType found old', ptrType, ptrType == ctypes.void, ptrType==ctypes['void*'])
 		return ptrType
 	end
 	ptrType = self:node('_ctype', {
@@ -91,12 +91,25 @@ function C_H_Parser:getptrtype(baseType)
 		isPointer = true,
 		parser = self,
 	})
---DEBUG:print('...getptrtype made new', ptrType)
+--DEBUG:print('...getPtrType made new', ptrType)
 	return ptrType
 end
 
+function C_H_Parser:getConstType(baseType)
+	if baseType.isConst then return baseType end
+	local typename = baseType.name..' const'	-- matches _ctype:init name builder
+	local constType = self:getCType(typename)
+	if constType then return constType end
+	-- within the ctor it'll assign to self:getCType i.e. self.ctypes[]
+	return self:node('_ctype', {
+		parser = self,
+		baseType = baseType,
+		isConst = true,
+	})
+end
+
 function C_H_Parser:getArrayType(baseType, ar)
-	local ctype = self:getctype(baseType.name..'['..ar..']')
+	local ctype = self:getCType(baseType.name..'['..ar..']')
 --DEBUG:print('looking for ctype name', baseType.name..'['..ar..'], got', ctype)
 	-- if not then make the array-type
 	if not ctype then
@@ -256,7 +269,6 @@ function C_H_Parser:parseQualifiers(keywords, qualifiers)
 	repeat
 		found = nil
 		for _,keyword in ipairs(keywords) do
-			local keyword = select(i, ...)
 			if type(keyword) == 'string' then
 				if self:canbe(keyword, 'keyword') then
 					-- warning Wduplicate-decl-specifier
@@ -309,7 +321,7 @@ function C_H_Parser:parseStmt()
 
 	-- forward on 'const' and 'volatile' to the type-qualifiers
 
-	self:parseDecls(stmtQuals)
+	self:parseDecls(stmtQuals, false, false)	-- false == not a struct, false == not a function-arg
 end
 
 --[[
@@ -319,16 +331,15 @@ then parse added quals
 	- if it's a stmt then parse stmt-quals (and append to the qual list given, if there)
 	- if it's a struct then parse struct-decls , which is just 'const'
 --]]
-function C_H_Parser:parseDecls(quals, isStructDecl)
-	
+function C_H_Parser:parseDecls(quals, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseDecls', quals, isStructDecl, isFuncArg)
 	-- parse the start of the type
 	-- notice that stmt quals can still come after the name, so long as they are before the comma
 	-- in fact, of all stmt-qualifiers, it seems the subsequent types of the decls only cares about 'const'
 	local startType = self:parseStartType(quals)
 
 	if isStructDecl then
-		assert(not quals)
-		quals = self:parseStructDeclQuals()
+		self:parseConstQuals(quals)	-- look for const rhs of the startType
 	else
 		-- More stmt qualifeirs can come after the first type.
 		-- Yes you can define a struct then do 'volatile', so long as you haven't done any *'s or names
@@ -342,15 +353,17 @@ function C_H_Parser:parseDecls(quals, isStructDecl)
 		startType = self:getconsttype(startType)
 	end
 
-	if self:parseSubDecl(startType, nil, isStructDecl) then
-		self:mustbe(',', 'symbol')
+	if self:parseSubDecl(startType, isStructDecl, isFuncArg) 
+	and not isFuncArg	-- if isFuncArg then don't handle multiple names after the type
+	and self:canbe(',', 'symbol')
+	then
 		repeat
-			self:parseSubDecl(startType, nil, isStructDecl)
+			self:parseSubDecl(startType, isStructDecl, isFuncArg)
 		until not self:canbe(',', 'symbol')
 	end
 end
 
-function C_H_Parser:parseStructDeclQuals()
+function C_H_Parser:parseConstQuals()
 	return self:parseQualifiers{'const'}
 end
 
@@ -362,7 +375,10 @@ function C_H_Parser:parseStartType(isConst)
 		local structName = self:canbe(nil, 'name')
 		-- now "struct "..structName is our type that we should test for collision.
 		if self:canbe('{', 'symbol') then
-			self:parseDecls(nil, true)	-- 2nd 'true' means struct-decls, means only look for 'const' qualifier and not the rest (volatile extern etc)
+			local quals = self:parseConstQuals()
+			-- 2nd 'true' means struct-decls, means only look for 'const' qualifier and not the rest (volatile extern etc)
+			-- 3rd 'false' means not a function-arg.  function-args can only have one name after the startType, not multiple.
+			self:parseDecls(quals, true, false)	
 			self:mustbe(';', 'symbol')
 		end
 	elseif self:canbe('enum', 'keyword') then
@@ -417,7 +433,7 @@ function C_H_Parser:parseStartType(isConst)
 		local typename = self:mustbe(nil, 'name')
 		-- this typename is going to be the type of whatever comes next -- symbol, or typedef.
 		-- so it must exist
-		return assert(self:getctype(typename), {msg="unknown type "..tostring(typename)})
+		return assert(self:getCType(typename), {msg="unknown type "..tostring(typename)})
 	end
 end
 
@@ -425,10 +441,12 @@ end
 If this is for a stmt-decl or a struct-decl then it gives a warning without a name
 If this is for a function-arg then it doesn't.
 --]]
-function C_H_Parser:parseSubDecl(startType, isFuncArg, isStructDecl)
+function C_H_Parser:parseSubDecl(startType, isStructDecl, isFuncArg)
 	if self:canbe('(', 'symbol') then
-		-- what do ( ) around a decl name do? scare off macros?
-		local subdecl = self:parseSubDecl(startType, isFuncArg, isStructDecl)
+		-- What do ( ) around a decl name do? scare off macros?
+		-- TODO maybe I should wrap this in a _par AST node
+		--  since for arrays we're going to complain if it's on any AST node other than the inner-most non-parenthsis AST node.
+		local subdecl = self:parseSubDecl(startType, isStructDecl, isFuncArg)
 		self:mustbe(')', 'symbol')
 		return subdecl
 	end
@@ -440,27 +458,84 @@ function C_H_Parser:parseSubDecl(startType, isFuncArg, isStructDecl)
 		if self:canbe('const', 'keyword') then
 			startType = self:getConstType(startType)
 		end
-		return self:parseSubDecl(startType, isFuncArg, isStructDecl)
+		return self:parseSubDecl(startType, isStructDecl, isFuncArg)
 	end
 
 	-- done with const's *'s and ()'s, move on to the name, array, function-args
-	local cpSubDecl = self:parseCPSubDecl(startType, isFuncArg, isStructDecl)
+	local subdecl = self:parseCPSubDecl(startType, isFuncArg, isStructDecl)
+
+	-- Function args can go here for now, until I figure out where they belong.
+	-- ... but how to tell function-args from parenthesis?
+	local func
+	if self:canbe('(', 'symbol') then
+		
+		-- if we're not parsing a func-arg then we'll want our subdecl to have a name
+		-- becuase functions all need names.
+		if not isFucnArg then
+			assert(subdecl.name, {msg="function needs a name"})
+		end
+		
+		local funcArgs = table()
+		local first = true
+		while not self:canbe(')', 'symbol') do
+			if not first then
+				self:mustbe(',', 'symbol')
+			end
+			first = false
+
+			funcArgs:insert(self:parseFuncArg())
+		end
+	
+		func  = self:node('_func', {
+			parser = self,
+			subdecl = subdecl,
+			args = funcArgs,
+		})
+		-- TODO track names: insert 'func' by name? what about anonymous funcs?
+		self.symbolsInOrder:insert(func)
+	end
 
 	-- TODO where to process arrays ... 
 	-- ... they can nest in parenthesis
 	-- ... but if we have any function-args in the overall decl
 	-- ... ... then we get an error if the array is anywhere except in the innermost parenthesis after the name. 
 	if self:canbe('[', 'symbol') then
+		if func then
+			-- but honestly, if this is supposed to be the array-part of the function, then my parser has a problem.
+			error{msg="functions can't return arrays"}
+		end
+
 		-- TODO also parse compile-time expressions
 		local arrayCount = self:mustbe(nil, 'number')
-		cpSubDecl.type = self:getArrayType(cpSubDecl.type, arrayCount)
+		-- modifying this in-place won't come back to haunt me, right?
+		-- there's only one subdecl per func or var, so ... ?
+		subdecl.type = self:getArrayType(subdecl.type, arrayCount)
 		self:mustbe(']', 'symbol')
 	end
 
+	local var
+	if not func then 
+		var = self:node('_var', {
+			parser = self,
+			subdecl = subdecl,
+		})
+		self.symbolsInOrder:insert(var)
+	end
 
+	return func or var
+end
+
+function C_H_Parser:parseFuncArg()
+	-- funcArg:
+	local quals = self:parseConstQuals()	-- see if there's a leading 'const'
+	-- arg 2 true = struct-type = only look for 'const' right of the type, not 'volatile', 'static', 'inline'.  
+	-- arg 3 false = function-arg = only allow one name (and with an optional name at that), not multiple `int a,b,c`'s
+	return self:parseDecls(quals, true, true)	
 end
 
 function C_H_Parser:parseCPSubDecl(ctype, isFuncArg, isStructDecl)
+--DEBUG:print('C_H_Parser:parseCPSubDecl', ctype, isFuncArg, isStructDecl)
+--DEBUG:assert(ctype)	
 	-- I could make a separte rule or three for this but nah ... just if's for ( and )
 	local name
 	if isFuncArg then
@@ -475,14 +550,18 @@ function C_H_Parser:parseCPSubDecl(ctype, isFuncArg, isStructDecl)
 		local bitfield = self:mustbe(nil, 'number')
 		ctype = self:getBitFieldType(ctype, bitfield)
 	end
-
 	return self:node('_subdecl', {
 		parser = self,
 		isFuncArg = isFuncArg,
 		isStructDecl = isStructDecl,
+		name = name,
 		type = ctype,
 	})
 end
+
+
+
+
 
 function idk()
 	repeat
@@ -498,7 +577,7 @@ function idk()
 				local name = self.lasttoken
 				if prefix then name = prefix..' '..name end
 
-				srctype = assert(self:getctype(name), "couldn't find type "..name)
+				srctype = assert(self:getCType(name), "couldn't find type "..name)
 
 			-- typedef struct ...
 			-- typedef union ...
@@ -521,7 +600,7 @@ function idk()
 			end
 
 			while self:canbe('*', 'symbol') do
-				srctype = self:getptrtype(srctype)
+				srctype = self:getPtrType(srctype)
 			end
 
 			local name = self:mustbe(nil, 'name')
@@ -553,11 +632,11 @@ function idk()
 			local extern = self:canbe('extern', 'keyword')
 
 			local ctypename = self:mustbe(nil, 'name')
-			local ctype = self:getctype(ctypename)
+			local ctype = self:getCType(ctypename)
 			assert(ctype, {msg="expected ctype"})
 
 			while self:canbe('*', 'symbol') do
-				ctype = self:getptrtype(ctype)
+				ctype = self:getPtrType(ctype)
 			end
 
 			-- TODO properly parse variable definition, including function and function-pointer definitions
@@ -633,14 +712,14 @@ function C_H_Parser:parseType(allowVarArray)
 	-- TODO this should be 'parsetype' and work just like variable declarations
 	-- and should be interoperable with typedefs
 	-- except typedefs can't use comma-separated list (can they?)
-	local baseFieldType = assert(self:getctype(name), "couldn't find type "..name)
+	local baseFieldType = assert(self:getCType(name), "couldn't find type "..name)
 --DEBUG:assert.is(baseFieldType, self.ast._ctype)
 --DEBUG:print('parseType baseFieldType', baseFieldType)
 --DEBUG:print('does baseFieldType* exist?', ctypes[baseFieldType.name..'*'])
 	local fieldtype = baseFieldType
 	while self:canbe('*', 'symbol') do
 --DEBUG:print('...looking for ptr of type', fieldtype)
-		fieldtype = self:getptrtype(fieldtype)
+		fieldtype = self:getPtrType(fieldtype)
 --DEBUG:print('...making ptr type', fieldtype)
 		-- const-ness ... meh?
 		local const = self:canbe('const', 'keyword')
@@ -674,7 +753,7 @@ function C_H_Parser:parseStruct(isunion)
 			error("struct/union expected name or {")
 		end
 
-		local ctype = self:getctype(name)
+		local ctype = self:getCType(name)
 		assert(ctype, "couldn't find type "..tostring(name))
 		-- TODO in the case of typedef calling this
 		-- the 'struct XXX' might not yet exist ...
@@ -729,13 +808,13 @@ function C_H_Parser:parseStruct(isunion)
 			-- TODO this should be 'parsetype' and work just like variable declarations
 			-- and should be interoperable with typedefs
 			-- except typedefs can't use comma-separated list (can they?)
-			local baseFieldType = assert(self:getctype(name), "couldn't find type "..name)
+			local baseFieldType = assert(self:getCType(name), "couldn't find type "..name)
 --DEBUG:assert.is(baseFieldType, self.ast._ctype)
 
 			while true do
 				local fieldtype = baseFieldType
 				while self:canbe('*', 'symbol') do
-					fieldtype = self:getptrtype(fieldtype)
+					fieldtype = self:getPtrType(fieldtype)
 					-- const-ness ... meh?
 					self:canbe('const', 'keyword')
 				end
