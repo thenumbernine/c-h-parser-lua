@@ -5,6 +5,14 @@ local headers = C_H_Parser()
 
 assert(headers[[
 int i;
+int const ic;
+const int ic2;	//ooh it rearranges qualifiers to organize them and detect duplicates
+volatile int iv;
+int volatile iv2;
+int * const ica, icb;	// => int * const a; int icb;
+int const * ica2, icb2;	// => int const * a; int const b;
+
+typedef int INT;
 ]])
 
 --[=[

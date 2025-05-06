@@ -81,7 +81,7 @@ function _ctype:init(args)
 				-- or names might get mixed up or something? idk
 				self.name = args.baseType.name..' const'
 			else
-				error("???")
+				error("_ctype:init with baseType, isn't arrayCount, isn't isPointer, isn't isConst ...")
 			end
 		else
 			self.name = nextuniquename()
@@ -145,8 +145,14 @@ function _ctype:serialize(out, varname)
 				if varname then
 					out(varname)
 				end
+			elseif self.isConst then
+				out(self.baseType.name)
+				out'const'
+				if varname then
+					out(varname)
+				end
 			else
-				error("???")
+				error("_ctype:serialize this should match the :init's name determination ...")
 			end
 		else
 			out(self.name)	-- anonymous here?
@@ -206,13 +212,27 @@ function _subdecl:serialize(out)
 	if self.name then out(self.name) end
 end
 
+-- qualifiers unique to statement
+-- don't include "const" because that is forwarded on to the first subdecl
+local stmtQuals = table{'static', 'extern', 'inline', 'volatile'}
+local function outputStmtQuals(qualSet, out)
+	if not qualSet then return end
+	for _,q in ipairs(stmtQuals) do
+		if qualSet[q] then
+			out(q)
+		end
+	end
+end
+
 local _func = nodeclass'func'
 function _func:init(args)
 	self.parser = assert.index(args, 'parser')
 	self.subdecl = assert.index(args, 'subdecl')
 	self.args = assert.index(args, 'args')
+	--.stmtQuals can be added later
 end
 function _func:serialize(out)
+	outputStmtQuals(self.stmtQuals, out)
 	self.subdecl:serialize(out)
 	out'('
 	for _,arg in ipairs(self.args) do
@@ -225,8 +245,10 @@ local _var = nodeclass'var'
 function _var:init(args)
 	self.parser = assert.index(args, 'parser')
 	self.subdecl = assert.index(args, 'subdecl')
+	--.stmtQuals can be added later
 end
 function _var:serialize(out)
+	outputStmtQuals(self.stmtQuals, out)
 	self.subdecl:serialize(out)
 end
 

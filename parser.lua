@@ -31,6 +31,7 @@ extern
 inline 
 __inline 
 __inline__
+volatile
 	]]):gmatch'%w+' do
 		self.keywords[w] = true
 	end
@@ -305,7 +306,8 @@ function C_H_Parser:parseStmtQuals(qualifiers)
 end
 
 function C_H_Parser:parseStmt()
-	
+--DEBUG:print('C_H_Parser:parseStmt nexttoken='..self.t.token)
+
 	-- lhs of the type name ...
 	local stmtQuals = self:parseStmtQuals()
 	local isTypedef = self:canbe('typedef', 'keyword')
@@ -320,6 +322,8 @@ function C_H_Parser:parseStmt()
 	--stmtQuals.volatile works on all, but only works once on the 'startType' of declarations.
 
 	-- forward on 'const' and 'volatile' to the type-qualifiers
+
+--DEBUG:print('pre-decl qualifiers:', require'ext.tolua'(stmtQuals))
 
 	self:parseDecls(stmtQuals, false, false)	-- false == not a struct, false == not a function-arg
 end
@@ -348,18 +352,31 @@ function C_H_Parser:parseDecls(quals, isStructDecl, isFuncArg)
 		self:parseStmtQuals(quals)
 	end
 
-	-- see if we're using a const type
+	-- See if we're using a const type -- that reflects on every subsequent field
+	--  while in C if we get a * on the lhs, that marks the start of the 1st subdecl's field.
 	if quals.const then
-		startType = self:getconsttype(startType)
+		startType = self:getConstType(startType)
 	end
 
-	if self:parseSubDecl(startType, isStructDecl, isFuncArg) 
-	and not isFuncArg	-- if isFuncArg then don't handle multiple names after the type
-	and self:canbe(',', 'symbol')
-	then
-		repeat
-			self:parseSubDecl(startType, isStructDecl, isFuncArg)
-		until not self:canbe(',', 'symbol')
+	local decl = self:parseSubDecl(startType, isStructDecl, isFuncArg)
+	if decl then
+		if not (isStructDecl or isFuncArg) then
+			--then this is a stmt decl so save its qualifiers
+			decl.stmtQuals = quals
+		end
+		-- here ... add to subdecl in-order list
+
+		-- if isFuncArg then don't handle multiple names after the type
+		if not isFuncArg
+		and self:canbe(',', 'symbol')
+		then
+			repeat
+				local decl = self:parseSubDecl(startType, isStructDecl, isFuncArg)
+				if not (isStructDecl or isFuncArg) then
+					decl.stmtQuals = quals
+				end
+			until not self:canbe(',', 'symbol')
+		end
 	end
 end
 
