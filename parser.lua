@@ -24,14 +24,16 @@ function C_H_Tokenizer:initSymbolsAndKeywords()
 	end
 
 	-- self.keywords lets the tokenizer flag if this is a reserved word or not, that's all
-	self.keywords = {
-		const = true,
-		enum = true,
-		extern = true,
-		struct = true,
-		typedef = true,
-		union = true,
-	}
+	for w in ([[
+const enum extern struct typedef union
+static
+extern
+inline 
+__inline 
+__inline__
+	]]):gmatch'%w+' do
+		self.keywords[w] = true
+	end
 end
 
 C_H_Tokenizer.singleLineComment = string.patescape'//'
@@ -234,6 +236,114 @@ end
 
 -- parser/base/parser calls this after setData
 function C_H_Parser:parseTree()
+	repeat
+		self:parseStmt()
+		self:mustbe(';', 'symbol')
+	until not self.t.token
+end
+
+--[[
+Each arg is a string of a qualifier to look for.
+Duplicates should produce warnings.
+The arg can also be a table if multiple keywords map to the same qualifier, in which case the first is used.
+All args are expected to be keywords.
+
+Returns a table with keys of each qualifier found.
+--]]
+function C_H_Parser:parseQualifiers(...)
+	local qualifiers = {}
+	local n = select('#', ...)
+	local found
+	repeat
+		found = nil
+		for i=1,n do
+			local q = select(i, ...)
+			if type(q) == 'string' then
+				if self:canbe(q, 'keyword') then
+					-- warning Wduplicate-decl-specifier
+					--assert(not qualifiers[q], {msg="warning duplciate '"..q.."' qualifier"})
+					qualifiers[q] = true
+					found = true
+				end
+			elseif type(q) == 'table' then
+				for _,subq in ipairs(q) do
+					if self:canbe(subq, 'keyword') then
+						-- warning Wduplicate-decl-specifier
+						--assert(not qualifiers[q[1]], {msg="warning duplciate '"..q[1].."' qualifier"})
+						qualifiers[q[1]] = true
+						found = true
+						break
+					end
+				end
+			else
+				error("unknown arg type "..type(q))
+			end
+		end
+	until not found 
+	return qualifiers
+end
+
+function C_H_Parser:parseStmt()
+	local qualifiers = self:parseQualifiers(
+		'static',
+		'extern',
+		{'inline', '__inline', '__inline__'}
+	)
+
+	local isTypedef = self:canbe('typedef', 'keyword')
+	assert(not isTypedef or not qualifiers.static, {msg="can't use typedef and static"})
+	assert(not isTypedef or not qualifiers.extern, {msg="can't use typedef and extern"})
+	assert(not isTypedef or not qualifiers.inline, {msg="can't use typedef and inline"})
+	
+	--qualifiers.static	-- function or variable
+	--qualifiers.extern	-- function only 
+	--qualifiers.inline	-- function only
+
+	self:parseDecls()
+end
+
+function C_H_Parser:parseDecls()
+	local startType = self:parseStartType()
+
+	if self:parseField() then
+		self:mustbe(',', 'symbol')
+		repeat
+			self:parseFieldName(startType)
+		until not self:canbe(',', 'symbol')
+	end
+end
+
+function C_H_Parser:parseStartType()
+	-- did our coder get lazy and put a const on the lhs instead of the rhs where it belongs?
+	local isConst = self:canbe('const', 'keyword')
+	
+	-- now parse the type
+	local startType = self:parseType()
+
+	-- now add const's or *'s
+	isConst = self:canbe('const', 'keyword') or isConst
+	startType = self:getConstType(startType)
+
+	while self:canbe('*', 'symbol') do
+		startType = self:getPtrType(startType)
+		if self:canbe('const', 'keyword') then
+			startType = self:getConstType(startType)
+		end
+	end
+
+	return startType
+end
+
+function C_H_Parser:parseType()
+	if self:canbe('struct', 'keyword')
+	or self:canbe('union', 'keyword')
+	then
+	elseif self:canbe('enum', 'keyword') then
+	else
+		self:mustbe(nil, 'name')
+	end
+end
+
 	repeat
 		-- unlike parser/base/parser, I'm not going to save the tree here
 		-- typedef ...

@@ -43,3 +43,55 @@ print'symbols:'
 for i,symbol in ipairs(headers.symbolsInOrder) do
 	print('#'..i, symbol:toC()..';')
 end
+
+--[[
+bnf?
+
+stmt:: [{['static' | 'inline' | 'extern']} | 'typedef'] decls ';';
+
+# like int a, *b, c[2], d; makes int a, int*b, int[2]c, int d;
+names are optional too.
+decls::
+	startType 
+	[
+		field 
+		{',' field}
+	]
+
+startType::
+	['const'] type ['const'] {'*' ['const']} 
+
+type::
+	(
+		('struct' | 'union') [name] ['{' {decls ';'} '}']
+	) |
+	(
+		'enum' [name] '{'
+			name ['=' number]
+			{',' name ['=' number]}
+			[',']
+		'}'
+	)
+	name
+	;
+
+# array on the name means the defining field is an array
+# array on the end of this means the type is an array type.
+field::
+	{'*' ['const']}
+	(
+		name [array]
+		[funcname] | 
+	)
+	['(' arglist ')']
+	[array]
+	[':' number]
+	;
+
+funcname::
+	'(' '*' name [array] ')'
+
+array::
+	{'[' number ']'}
+	
+--]]
