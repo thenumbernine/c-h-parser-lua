@@ -60,6 +60,8 @@ args:
 	arrayCount = if the type is an array of another type
 	isPrimitive = if this is a primitive type
 	isPointer = is a pointer of the base type
+	isConst
+	isVolatile
 
 TODO parser needs to be in here so just use this one and not nodeclass?
 or move this one's parser-specific code into CParser.ast:node() ?
@@ -85,12 +87,14 @@ function _ctype:init(args)
 				-- TODO don't use isConst and isPointer in the same ctype?
 				-- or names might get mixed up or something? idk
 				self.name = args.baseType.name..' const'
+			elseif args.isVolatile then
+				self.name = args.baseType.name..' volatile'
 			elseif args.funcArgs then
 				-- what should name even be ...
 				-- why am I even using name ...
 				self.name = self.name .. funcArgsToC(self.funcArgs)
 			else
-				error("_ctype:init with baseType, isn't arrayCount, isn't isPointer, isn't isConst ...")
+				error("_ctype:init with baseType, isn't arrayCount, isn't isPointer, isn't isConst, isn't isVolatile ...")
 			end
 		else
 			self.name = nextuniquename()
@@ -101,7 +105,7 @@ function _ctype:init(args)
 --DEBUG:print('...CType already has name', self.name)
 	end
 	self.parser = assert.index(args, 'parser')	-- there for prims, not needed otherwise
-	assert(not self.parser.ctypes[self.name], "tried to redefine "..tostring(self.name))
+	if self.parser.ctypes[self.name] then error("tried to redefine "..tostring(self.name)) end
 	self.parser.ctypes[self.name] = self
 
 	self.fields = args.fields
@@ -109,6 +113,7 @@ function _ctype:init(args)
 	self.isTypedef = args.isTypedef
 	self.isEnum = args.isEnum
 	self.isConst = args.isConst
+	self.isVolatile = args.isVolatile
 	self.isunion = args.isunion
 	self.baseType = args.baseType
 	self.arrayCount = args.arrayCount
@@ -159,6 +164,12 @@ function _ctype:serialize(out, varname)
 			elseif self.isConst then
 				out(self.baseType.name)
 				out'const'
+				if varname then
+					out(varname)
+				end
+			elseif self.isVolatile then
+				out(self.baseType.name)
+				out'volatile'
 				if varname then
 					out(varname)
 				end
@@ -229,8 +240,8 @@ function _subdecl:serialize(out)
 end
 
 -- qualifiers unique to statement
--- don't include "const" because that is forwarded on to the first subdecl
-local stmtQuals = table{'static', 'extern', 'inline', 'volatile'}
+-- don't include "const" and "volatile" because they are forwarded on to the first subdecl
+local stmtQuals = table{'static', 'extern', 'inline'}
 local function outputStmtQuals(qualSet, out)
 	if not qualSet then return end
 	for _,q in ipairs(stmtQuals) do

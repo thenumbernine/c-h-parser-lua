@@ -82,9 +82,9 @@ function C_H_Parser:getPtrType(baseType)
 --DEBUG:print('getPtrType', baseType)
 	local typename = baseType.name..'*'
 --DEBUG:print('getPtrType typename', typename)
-	local ptrType = self:getCType(ptrtypename)
+	local ptrType = self:getCType(typename)
 	if ptrType then
---DEBUG:print('...getPtrType found old', ptrType, ptrType == ctypes.void, ptrType==ctypes['void*'])
+--DEBUG:print('...getPtrType found old', ptrType, ptrType == self.ctypes.void, ptrType==self.ctypes['void*'])
 		return ptrType
 	end
 	ptrType = self:node('_ctype', {
@@ -108,6 +108,20 @@ function C_H_Parser:getConstType(baseType)
 		isConst = true,
 	})
 end
+
+function C_H_Parser:getVolatileType(baseType)
+	if baseType.isVolatile then return baseType end
+	local typename = baseType.name..' volatile'	-- matches _ctype:init name builder
+	local volatileType = self:getCType(typename)
+	if volatileType then return volatileType end
+	-- within the ctor it'll assign to self:getCType i.e. self.ctypes[]
+	return self:node('_ctype', {
+		parser = self,
+		baseType = baseType,
+		isVolatile = true,
+	})
+end
+
 
 function C_H_Parser:getArrayType(baseType, ar)
 	local ctype = self:getCType(baseType.name..'['..ar..']')
@@ -319,7 +333,6 @@ function C_H_Parser:parseStmt()
 	--stmtQuals.static	-- function or variable
 	--stmtQuals.extern	-- function only 
 	--stmtQuals.inline	-- function only
-	--stmtQuals.volatile works on all, but only works once on the 'startType' of declarations.
 
 	-- forward on 'const' and 'volatile' to the type-qualifiers
 
@@ -331,6 +344,8 @@ function C_H_Parser:parseStmt()
 		-- insert all as typedefs
 		for _,decl in ipairs(decls) do
 			-- add typedefs
+print('decl type', decl.subdecl.type.name)			
+print('decl name', decl.subdecl.name)			
 			self.declTypes:insert(self:node('_ctype', {
 				parser = self,
 				isTypedef = true,
@@ -358,10 +373,10 @@ function C_H_Parser:parseDecls(quals, isStructDecl, isFuncArg)
 	-- parse the start of the type
 	-- notice that stmt quals can still come after the name, so long as they are before the comma
 	-- in fact, of all stmt-qualifiers, it seems the subsequent types of the decls only cares about 'const'
-	local startType = self:parseStartType(quals)
+	local startType = self:parseStartType()
 
 	if isStructDecl then
-		self:parseConstQuals(quals)	-- look for const rhs of the startType
+		self:parseCVQuals(quals)	-- look for const rhs of the startType
 	else
 		-- More stmt qualifeirs can come after the first type.
 		-- Yes you can define a struct then do 'volatile', so long as you haven't done any *'s or names
@@ -374,6 +389,9 @@ function C_H_Parser:parseDecls(quals, isStructDecl, isFuncArg)
 	--  while in C if we get a * on the lhs, that marks the start of the 1st subdecl's field.
 	if quals.const then
 		startType = self:getConstType(startType)
+	end
+	if quals.volatile then
+		startType = self:getVolatileType(startType)
 	end
 
 	-- always decl here?
@@ -396,11 +414,11 @@ function C_H_Parser:parseDecls(quals, isStructDecl, isFuncArg)
 	return decls
 end
 
-function C_H_Parser:parseConstQuals()
-	return self:parseQualifiers{'const'}
+function C_H_Parser:parseCVQuals()
+	return self:parseQualifiers{'const', 'volatile'}
 end
 
-function C_H_Parser:parseStartType(isConst)
+function C_H_Parser:parseStartType()
 	if self:canbe('struct', 'keyword')
 	or self:canbe('union', 'keyword')
 	then
@@ -408,7 +426,7 @@ function C_H_Parser:parseStartType(isConst)
 		local structName = self:canbe(nil, 'name')
 		-- now "struct "..structName is our type that we should test for collision.
 		if self:canbe('{', 'symbol') then
-			local quals = self:parseConstQuals()
+			local quals = self:parseCVQuals()
 			-- 2nd 'true' means struct-decls, means only look for 'const' qualifier and not the rest (volatile extern etc)
 			-- 3rd 'false' means not a function-arg.  function-args can only have one name after the startType, not multiple.
 			self:parseDecls(quals, true, false)	
@@ -487,10 +505,15 @@ function C_H_Parser:parseSubDecl(startType, isStructDecl, isFuncArg)
 	-- once we get our * then it and all subsequent *'s and const's only applies to this subdecl
 	if self:canbe('*', 'symbol') then
 		startType = self:getPtrType(startType)
-		-- const has to always follow a *, or be on the startType
-		if self:canbe('const', 'keyword') then
+		local quals = self:parseCVQuals()
+		-- const or volatile has to always follow a *, or be on the startType
+		if quals.const then
 			startType = self:getConstType(startType)
 		end
+		if quals.volatile then
+			startType = self:getVolatileType(startType)
+		end
+
 		return self:parseSubDecl(startType, isStructDecl, isFuncArg)
 	end
 
@@ -567,7 +590,7 @@ end
 
 function C_H_Parser:parseFuncArg()
 	-- funcArg:
-	local quals = self:parseConstQuals()	-- see if there's a leading 'const'
+	local quals = self:parseCVQuals()	-- see if there's a leading 'const'
 	-- arg 2 true = struct-type = only look for 'const' right of the type, not 'volatile', 'static', 'inline'.  
 	-- arg 3 false = function-arg = only allow one name (and with an optional name at that), not multiple `int a,b,c`'s
 	return self:parseDecls(quals, true, true)	

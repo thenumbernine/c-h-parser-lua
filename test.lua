@@ -9,10 +9,13 @@ int const ic;
 const int ic2;	//ooh it rearranges qualifiers to organize them and detect duplicates
 volatile int iv;
 int volatile iv2;
+const int volatile icv;
+const int volatile * volatile icvv;
 int * const ica, icb;	// => int * const a; int icb;
 int const * ica2, icb2;	// => int const * a; int const b;
 
 typedef int INT;
+typedef int * PINT;
 ]])
 
 --[=[
@@ -86,9 +89,9 @@ stmtDecls::
 structDecls::
 	startType	
 	
-	# if 'const' also goes in subDecl then I can remove this one rule-expr right?
+	# if 'const' & 'volatile' also goes in subDecl then I can remove this one rule-expr right?
 	# but likewise, if structDecls and stmtDecls overlaps then this can harmlessly go here.
-	structDeclQuals		# struct fields can have proceeding 'const' quals only, no other quals.
+	structDeclQuals		# struct fields can have proceeding 'const' / 'volatile' quals
 	
 	subDecl {',' subDecl}
 	;
@@ -98,7 +101,7 @@ startType::
 		('struct' | 'union') [name] [
 			'{' 
 				{ 
-					structDeclQuals		# struct fields can have preceding 'const's only, no other quals
+					structDeclQuals		# struct fields can have preceding 'const' / 'volatile', no other quals
 					structDecls 
 					';'
 				}
@@ -115,7 +118,7 @@ startType::
 	name
 	;
 
-structDeclQuals:: ['const'] ;
+structDeclQuals:: { 'const' | 'volatile' } ;
 
 # array on the name means the defining subDecl is an array
 # array after function args means we're returning an array - which is an error.
@@ -124,7 +127,7 @@ structDeclQuals:: ['const'] ;
 subDecl::
 	'(' subDecl ')' |
 	'*' subDecl |
-	'const' subDecl |
+	structDeclQuals subDecl |
 	
 	# arrays or function-args can go anywhere in the parenthesis list.
 	# so long as they are rhs of the name.
@@ -148,7 +151,7 @@ cpSubDecl:: name [':' number];
 
 # really this is just 
 # 1) stmtDecls
-# 2) ... but enforcing 'structDeclQuals' i.e. non-stmt-decl-quals, i.e. 'const' only ... tho without stmt decl quals you can even avoid this check and merge it into the subDecl rule...
+# 2) ... but enforcing 'structDeclQuals' i.e. non-stmt-decl-quals, i.e. 'const' / 'volatile' ... tho without stmt decl quals you can even avoid this check and merge it into the subDecl rule...
 # 3) ... and without multiple names per type
 funcArg::
 	structDeclQuals			# really this rule should be named nonStmt decl quals, for struct and func-args
