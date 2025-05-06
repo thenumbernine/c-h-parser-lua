@@ -25,7 +25,9 @@ function C_H_Tokenizer:initSymbolsAndKeywords()
 
 	-- self.keywords lets the tokenizer flag if this is a reserved word or not, that's all
 	for w in ([[
-const enum extern struct typedef union
+const enum extern 
+struct union
+typedef
 static
 extern
 inline 
@@ -357,7 +359,13 @@ print('decl name', decl.subdecl.name)
 		-- insert all as decls
 		-- here ... add to subdecl in-order list
 		-- TODO track names: insert 'func' by name? what about anonymous funcs?
-		self.symbolsInOrder:append(decls)
+		for _,decl in ipairs(decls) do
+			if self.ast._fwdDeclStruct:isa(decl) then
+				self.declTypes:insert(decl)
+			else
+				self.symbolsInOrder:insert(decl)
+			end
+		end
 	end
 end
 
@@ -383,6 +391,21 @@ function C_H_Parser:parseDecls(quals, isStructDecl, isFuncArg)
 		-- You can also do `int const volatile static a, b, c` and the const goes to all subsequent a,b,c;
 		--  evne though the const is for the fields while the volatile static is for the statement.	
 		self:parseStmtQuals(quals)
+	end
+
+	-- hack here, if we're doing a stmt decl and our base type is a struct
+	-- and it's a struct without a body
+	-- names are optional - in that event it's a fwd-declare.
+	if startType.isStruct
+	--and self:canbe(';', 'symbol') -- don't consume it, leave it for the end of stmt
+	and self.t.token == ';'
+	then
+		local fwdDecl = self:node('_fwdDeclStruct', {
+			parser = self,
+			name = startType.name,
+		})
+		return {fwdDecl}
+		--self.symbolsInOrder:insert(fwdDecl)
 	end
 
 	-- See if we're using a const type -- that reflects on every subsequent field
@@ -425,13 +448,38 @@ function C_H_Parser:parseStartType()
 		local isUnion = self.lasttoken == 'union'
 		local structName = self:canbe(nil, 'name')
 		-- now "struct "..structName is our type that we should test for collision.
+		structName = (isUnion and 'union ' or 'struct ')..structName
+
 		if self:canbe('{', 'symbol') then
-			local quals = self:parseCVQuals()
-			-- 2nd 'true' means struct-decls, means only look for 'const' qualifier and not the rest (volatile extern etc)
-			-- 3rd 'false' means not a function-arg.  function-args can only have one name after the startType, not multiple.
-			self:parseDecls(quals, true, false)	
-			self:mustbe(';', 'symbol')
+			local fields = table()
+			while not self:canbe('}', 'symbol') do
+				local quals = self:parseCVQuals()
+				-- 2nd 'true' means struct-decls, means only look for 'const' qualifier and not the rest (volatile extern etc)
+				-- 3rd 'false' means not a function-arg.  function-args can only have one name after the startType, not multiple.
+				local decls = self:parseDecls(quals, true, false)	
+				fields:append(assert(decls))
+				self:mustbe(';', 'symbol')
+			end
+			return self:node('_ctype', {
+				parser = self,
+				name = structName,
+				fields = fields,
+				isStruct = true,
+				isUnion = isUnion,
+			})
 		end
+		-- else ... better have a name
+		-- and then it's a forward-declaration of a struct, for the sake of other decl prototypes ...
+		-- ... TODO really just use self.tree anyways.
+		local ctype = self:node('_ctype', {
+			parser = self,
+			name = structName,
+			isStruct = true,
+			isUnion = isUnion,
+			-- fwd-declare ...
+			-- but still legit here cuz it could be used for ptr-types in the same stmt.
+		})
+		return ctype
 	elseif self:canbe('enum', 'keyword') then
 		local enumName = self:canbe(nil, 'name')
 	

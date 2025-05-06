@@ -32,30 +32,19 @@ end
 ast.nodeclass = nodeclass
 
 
-local _ctype = nodeclass'ctype'
-
-local _field = nodeclass'field'
-function _field:init(args)
-	self.name = assert.type(assert.index(args, 'name'), 'string')
-	self.type = assert.is(assert.index(args, 'type'), _ctype)
-end
-function _field:serialize(out)
-	self.type:serialize(out)
-	assert(self.name, 'some fields are anonymous...')
-	out(self.name)
-end
-
 local function funcArgsToC(funcArgs)
 	return '('..funcArgs:mapi(function(arg) return arg:toC() end):concat', '..')'
 end
 
+local _ctype = nodeclass'ctype'
 --[[
 args:
 	name = it could be nameless for typedef'd or anonymous nested structs
 	anonymous = true for name == nil for nested anonymous structs/unions
 	fields = it will only exist for structs
 	funcArgs = only exist for function type
-	isunion = goes with fields for unions vs structs
+	isStruct = this is a struct/union.  if no fields then it's a fwd-declare.
+	isUnion = goes with isStruct for unions vs structs
 	baseType = for typedefs or for arrays
 	arrayCount = if the type is an array of another type
 	isPrimitive = if this is a primitive type
@@ -71,7 +60,7 @@ primitives: name isPrimitive size get set
 typedef: name baseType
 array: [name] baseType arrayCount
 pointer: baseType isPointer
-struct: [name] fields [isunion]
+struct: [name] fields [isUnion]
 --]]
 function _ctype:init(args)
 	args = args or {}
@@ -114,7 +103,8 @@ function _ctype:init(args)
 	self.isEnum = args.isEnum
 	self.isConst = args.isConst
 	self.isVolatile = args.isVolatile
-	self.isunion = args.isunion
+	self.isStruct = args.isStruct
+	self.isUnion = args.isUnion
 	self.baseType = args.baseType
 	self.arrayCount = args.arrayCount
 	self.isPrimitive = args.isPrimitive
@@ -262,6 +252,7 @@ function _func:serialize(out)
 	self.subdecl:serialize(out)
 end
 
+-- TODO merge _func and _var
 local _var = nodeclass'var'
 function _var:init(args)
 	self.parser = assert.index(args, 'parser')
@@ -271,6 +262,15 @@ end
 function _var:serialize(out)
 	outputStmtQuals(self.stmtQuals, out)
 	self.subdecl:serialize(out)
+end
+
+local _fwdDeclStruct = nodeclass'fwdDeclStruct'
+function _fwdDeclStruct:init(args)
+	self.parser = assert.index(args, 'parser')
+	self.name = assert.index(args, 'name')
+end
+function _fwdDeclStruct:serialize(out)
+	out(self.name)
 end
 
 return ast

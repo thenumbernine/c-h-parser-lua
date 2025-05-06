@@ -16,6 +16,13 @@ int const * ica2, icb2;	// => int const * a; int const b;
 
 typedef int INT;
 typedef int * PINT;
+typedef int INT2, * PINT2;
+
+struct FwdStruct;
+typedef struct FwdStruct2 FwdStruct2Name;
+//struct namedStruct2 {};
+//struct {} anonStructVar;
+//struct namedStructWith {} namedStructVar;
 ]])
 
 --[=[
