@@ -100,20 +100,22 @@ startType::
 	;
 
 # array on the name means the defining subDecl is an array
-# array on the end of this means the type is an array type.
+# array after function args means we're returning an array - which is an error.
+# array before function args but outside parenthesis of a function-def means an array-of-functions which is bad.
+# only array inside all parenthesis, next to the name, and with (* ), will tell it array-of-function-pointers.
 subDecl::
-	{'*' ['const']}
-	(
-		[name] [array]
-		[funcname] | 
-	)
-	['(' arglist ')']
-	[array]
-	[':' number]
+	'(' subDecl ')' |
+	'*' subDecl |
+	'const' subDecl |
+	subDecl array |		# where does the array rule go?
+	cpSubDecl
 	;
 
-funcname::
-	'(' '*' [name] [array] ')'
+# subDecl for stmtDecl or structDecl needs a name, subDecl for funcArg doesn't.
+cpSubDecl::
+	name
+	[':' number]			# NOTICE bitfields only for subDecls of structs...
+	;
 
 array::
 	{'[' number ']'}

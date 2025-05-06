@@ -342,10 +342,10 @@ function C_H_Parser:parseDecls(quals, isStructDecl)
 		startType = self:getconsttype(startType)
 	end
 
-	if self:parseSubDecl(startType) then
+	if self:parseSubDecl(startType, nil, isStructDecl) then
 		self:mustbe(',', 'symbol')
 		repeat
-			self:parseSubDecl(startType)
+			self:parseSubDecl(startType, nil, isStructDecl)
 		until not self:canbe(',', 'symbol')
 	end
 end
@@ -421,23 +421,67 @@ function C_H_Parser:parseStartType(isConst)
 	end
 end
 
-function C_H_Parser:parseSubDecl(startType)
+--[[
+If this is for a stmt-decl or a struct-decl then it gives a warning without a name
+If this is for a function-arg then it doesn't.
+--]]
+function C_H_Parser:parseSubDecl(startType, isFuncArg, isStructDecl)
+	if self:canbe('(', 'symbol') then
+		-- what do ( ) around a decl name do? scare off macros?
+		local subdecl = self:parseSubDecl(startType, isFuncArg, isStructDecl)
+		self:mustbe(')', 'symbol')
+		return subdecl
+	end
+
 	-- once we get our * then it and all subsequent *'s and const's only applies to this subdecl
-	while self:canbe('*', 'symbol') do
+	if self:canbe('*', 'symbol') then
 		startType = self:getPtrType(startType)
+		-- const has to always follow a *, or be on the startType
 		if self:canbe('const', 'keyword') then
 			startType = self:getConstType(startType)
 		end
+		return self:parseSubDecl(startType, isFuncArg, isStructDecl)
 	end
 
-	local isFuncPtrName = self:canbe('(', 'symbol') 
+	-- done with const's *'s and ()'s, move on to the name, array, function-args
+	local cpSubDecl = self:parseCPSubDecl(startType, isFuncArg, isStructDecl)
+
+	-- TODO where to process arrays ... 
+	-- ... they can nest in parenthesis
+	-- ... but if we have any function-args in the overall decl
+	-- ... ... then we get an error if the array is anywhere except in the innermost parenthesis after the name. 
+	if self:canbe('[', 'symbol') then
+		-- TODO also parse compile-time expressions
+		local arrayCount = self:mustbe(nil, 'number')
+		cpSubDecl.type = self:getArrayType(cpSubDecl.type, arrayCount)
+		self:mustbe(']', 'symbol')
+	end
+
+
+end
+
+function C_H_Parser:parseCPSubDecl(ctype, isFuncArg, isStructDecl)
 	-- I could make a separte rule or three for this but nah ... just if's for ( and )
-	local name = self:c
-
-	if isFuncPtrName then
+	local name
+	if isFuncArg then
+		name = self:canbe(nil, 'name')
+	else
+		name = self:mustbe(nil, 'name')
 	end
 
-	return startType
+	if isStructDecl 
+	and self:canbe(':', 'symbol')
+	then
+		local bitfield = self:mustbe(nil, 'number')
+		ctype = self:getBitFieldType(ctype, bitfield)
+	end
+
+	return self:node('_subdecl', {
+		parser = self,
+		isFuncArg = isFuncArg,
+		isStructDecl = isStructDecl,
+		type = ctype,
+	})
 end
 
 function idk()
