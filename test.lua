@@ -21,11 +21,12 @@ typedef int INT2, * PINT2;
 struct FwdStruct;
 typedef struct FwdStruct2 FwdStruct2Name;
 struct FwdStructWithVar *fsv2;
-//struct namedStruct2 {};
+//struct namedStruct2 {};	//TODO parses but missing its empty fields...
 //struct {} anonStructVar;
 //struct namedStructWith {} namedStructVar;
 
 int if1();
+//int (*ifp1)();
 ]])
 
 --[=[

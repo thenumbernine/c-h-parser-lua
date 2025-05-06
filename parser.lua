@@ -438,6 +438,7 @@ function C_H_Parser:parseDecls(quals, isStructDecl, isFuncArg)
 	local decls = table()
 	repeat
 		local decl = self:parseSubDecl(startType, isStructDecl, isFuncArg)
+--DEBUG:assert(decl)		
 		decls:insert(decl)
 
 		-- if it's not a structDecl or a funcArg then this is a stmt decl
@@ -560,11 +561,20 @@ function C_H_Parser:parseSubDecl(startType, isStructDecl, isFuncArg)
 		-- What do ( ) around a decl name do? scare off macros?
 		-- TODO maybe I should wrap this in a _par AST node
 		--  since for arrays we're going to complain if it's on any AST node other than the inner-most non-parenthsis AST node.
-		local subdecl = self:parseSubDecl(startType, isStructDecl, isFuncArg)
+		local subdecl = self:parseSubDecl2(startType, isStructDecl, isFuncArg)
+--DEBUG:assert(subdecl)		
 		self:mustbe(')', 'symbol')
+		-- TODO _parenthesis-wrapping node?
+		-- especially for making sure that function declarations only have arrays on the inner-most parentehsis?
+		return subdecl
+	else
+		local subdecl = self:parseSubDecl2(startType, isStructDecl, isFuncArg)
+--DEBUG:assert(subdecl)		
 		return subdecl
 	end
+end
 
+function C_H_Parser:parseSubDecl2(startType, isStructDecl, isFuncArg)
 	-- once we get our * then it and all subsequent *'s and const's only applies to this subdecl
 	if self:canbe('*', 'symbol') then
 		startType = self:getPtrType(startType)
@@ -576,22 +586,25 @@ function C_H_Parser:parseSubDecl(startType, isStructDecl, isFuncArg)
 		if quals.volatile then
 			startType = self:getVolatileType(startType)
 		end
-
-		return self:parseSubDecl(startType, isStructDecl, isFuncArg)
 	end
+	
+	local subdecl = self:parseSubDecl3(startType, isStructDecl, isFuncArg)
+--DEBUG:assert(subdecl)
+	return subdecl
+end
+
+function C_H_Parser:parseSubDecl3(startType, isStructDecl, isFuncArg)
 
 	-- done with const's *'s and ()'s, move on to the name, array, function-args
-	local subdecl = self:parseCPSubDecl(startType, isFuncArg, isStructDecl)
+	local var = self:parseSubDecl4(startType, isFuncArg, isStructDecl)
 
 	-- Function args can go here for now, until I figure out where they belong.
 	-- ... but how to tell function-args from parenthesis?
-	local func
 	if self:canbe('(', 'symbol') then
-
-		-- if we're not parsing a func-arg then we'll want our subdecl to have a name
+		-- if we're not parsing a func-arg then we'll want our var to have a name
 		-- becuase functions all need names.
 		if not isFucnArg then
-			assert(subdecl.name, {msg="function needs a name"})
+			assert(var.subdecl.name, {msg="function needs a name"})
 		end
 
 		local funcArgs = table()
@@ -605,50 +618,24 @@ function C_H_Parser:parseSubDecl(startType, isStructDecl, isFuncArg)
 			funcArgs:insert(self:parseFuncArg())
 		end
 
-		assert(not subdecl.type.funcArgs, {msg="can't define a function of a function, right?  It needs to be a function pointer, right?"})
+		assert(not var.type.funcArgs, {msg="can't define a function of a function, right?  It needs to be a function pointer, right?"})
 		-- TODO should I even od this?  how about a unique new funcType node? same with arrayType, ptrType, constType, structType, enumType, etc ...
 		-- but what about unique type name registration and caching ...
-		subdecl.type = self:node('_ctype', {
+		var.subdecl.type = self:node('_ctype', {
 			parser = self,
-			baseType = subdecl.type,	-- return type
+			baseType = var.subdecl.type,	-- return type
 			funcArgs = funcArgs,		-- arg list
 		})
 
 		-- so func and var are the same?
 		-- except that func can't return an array or something?
-		func  = self:node('_func', {
+		return self:node('_func', {
 			parser = self,
-			subdecl = subdecl,
+			subdecl = var.subdecl,
 		})
 	end
 
-	-- TODO where to process arrays ...
-	-- ... they can nest in parenthesis
-	-- ... but if we have any function-args in the overall decl
-	-- ... ... then we get an error if the array is anywhere except in the innermost parenthesis after the name.
-	if self:canbe('[', 'symbol') then
-		if func then
-			-- but honestly, if this is supposed to be the array-part of the function, then my parser has a problem.
-			error{msg="functions can't return arrays"}
-		end
-
-		-- TODO also parse compile-time expressions
-		local arrayCount = self:mustbe(nil, 'number')
-		-- modifying this in-place won't come back to haunt me, right?
-		-- there's only one subdecl per func or var, so ... ?
-		subdecl.type = self:getArrayType(subdecl.type, arrayCount)
-		self:mustbe(']', 'symbol')
-	end
-
-	local var
-	if not func then
-		var = self:node('_var', {
-			parser = self,
-			subdecl = subdecl,
-		})
-	end
-
-	return func or var
+	return var
 end
 
 function C_H_Parser:parseFuncArg()
@@ -659,9 +646,9 @@ function C_H_Parser:parseFuncArg()
 	return self:parseDecls(quals, true, true)
 end
 
-function C_H_Parser:parseCPSubDecl(ctype, isFuncArg, isStructDecl)
---DEBUG:print('C_H_Parser:parseCPSubDecl', ctype, isFuncArg, isStructDecl)
---DEBUG:assert(ctype)
+function C_H_Parser:parseSubDecl4(startType, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseCPSubDecl', startType, isStructDecl, isFuncArg)
+--DEBUG:assert(startType)
 	-- I could make a separte rule or three for this but nah ... just if's for ( and )
 	local name
 	if isFuncArg then
@@ -674,14 +661,36 @@ function C_H_Parser:parseCPSubDecl(ctype, isFuncArg, isStructDecl)
 	and self:canbe(':', 'symbol')
 	then
 		local bitfield = self:mustbe(nil, 'number')
-		ctype = self:getBitFieldType(ctype, bitfield)
+		startType = self:getBitFieldType(startType, bitfield)
 	end
-	return self:node('_subdecl', {
+	
+	local subdecl = self:node('_subdecl', {
 		parser = self,
 		isFuncArg = isFuncArg,
 		isStructDecl = isStructDecl,
 		name = name,
-		type = ctype,
+		type = startType,
+	})
+
+	-- TODO where to process arrays ...
+	-- ... they can nest in parenthesis
+	-- ... but if we have any function-args in the overall decl
+	-- ... ... then we get an error if the array is anywhere except in the innermost parenthesis after the name.
+	if self:canbe('[', 'symbol') then
+		-- but honestly, if this is supposed to be the array-part of the function, then my parser has a problem.
+		--if func then error{msg="functions can't return arrays"} end
+
+		-- TODO also parse compile-time expressions
+		local arrayCount = self:mustbe(nil, 'number')
+		-- modifying this in-place won't come back to haunt me, right?
+		-- there's only one subdecl per func or var, so ... ?
+		subdecl.type = self:getArrayType(subdecl.type, arrayCount)
+		self:mustbe(']', 'symbol')
+	end
+
+	return self:node('_var', {
+		parser = self,
+		subdecl = subdecl,
 	})
 end
 
