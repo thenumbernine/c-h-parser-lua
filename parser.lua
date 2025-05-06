@@ -325,7 +325,25 @@ function C_H_Parser:parseStmt()
 
 --DEBUG:print('pre-decl qualifiers:', require'ext.tolua'(stmtQuals))
 
-	self:parseDecls(stmtQuals, false, false)	-- false == not a struct, false == not a function-arg
+	local decls = self:parseDecls(stmtQuals, false, false)	-- false == not a struct, false == not a function-arg
+
+	if isTypedef then
+		-- insert all as typedefs
+		for _,decl in ipairs(decls) do
+			-- add typedefs
+			self.declTypes:insert(self:node('_ctype', {
+				parser = self,
+				isTypedef = true,
+				baseType = decl.subdecl.type,
+				name = assert.index(decl.subdecl, 'name'),
+			}))
+		end
+	else
+		-- insert all as decls
+		-- here ... add to subdecl in-order list
+		-- TODO track names: insert 'func' by name? what about anonymous funcs?
+		self.symbolsInOrder:append(decls)
+	end
 end
 
 --[[
@@ -358,26 +376,24 @@ function C_H_Parser:parseDecls(quals, isStructDecl, isFuncArg)
 		startType = self:getConstType(startType)
 	end
 
-	local decl = self:parseSubDecl(startType, isStructDecl, isFuncArg)
-	if decl then
+	-- always decl here?
+	-- yes?
+
+	local decls = table()
+	repeat
+		local decl = self:parseSubDecl(startType, isStructDecl, isFuncArg)
+		decls:insert(decl)
+
+		-- if it's not a structDecl or a funcArg then this is a stmt decl 
+		--  so save the stmt-qualifiers
 		if not (isStructDecl or isFuncArg) then
-			--then this is a stmt decl so save its qualifiers
 			decl.stmtQuals = quals
 		end
-		-- here ... add to subdecl in-order list
-
+		
 		-- if isFuncArg then don't handle multiple names after the type
-		if not isFuncArg
-		and self:canbe(',', 'symbol')
-		then
-			repeat
-				local decl = self:parseSubDecl(startType, isStructDecl, isFuncArg)
-				if not (isStructDecl or isFuncArg) then
-					decl.stmtQuals = quals
-				end
-			until not self:canbe(',', 'symbol')
-		end
-	end
+		if isFuncArg then break end
+	until not self:canbe(',', 'symbol')
+	return decls
 end
 
 function C_H_Parser:parseConstQuals()
@@ -502,14 +518,22 @@ function C_H_Parser:parseSubDecl(startType, isStructDecl, isFuncArg)
 
 			funcArgs:insert(self:parseFuncArg())
 		end
-	
+
+		assert(not baseType.funcArgs, {msg="can't define a function of a function, right?  It needs to be a function pointer, right?"})
+		-- TODO should I even od this?  how about a unique new funcType node? same with arrayType, ptrType, constType, structType, enumType, etc ...
+		-- but what about unique type name registration and caching ...
+		subdecl.type = self:node('_ctype', {
+			parser = self,
+			baseType = subdecl.type,	-- return type
+			funcArgs = funcArgs,		-- arg list
+		})
+
+		-- so func and var are the same?
+		-- except that func can't return an array or something?
 		func  = self:node('_func', {
 			parser = self,
 			subdecl = subdecl,
-			args = funcArgs,
 		})
-		-- TODO track names: insert 'func' by name? what about anonymous funcs?
-		self.symbolsInOrder:insert(func)
 	end
 
 	-- TODO where to process arrays ... 
@@ -536,7 +560,6 @@ function C_H_Parser:parseSubDecl(startType, isStructDecl, isFuncArg)
 			parser = self,
 			subdecl = subdecl,
 		})
-		self.symbolsInOrder:insert(var)
 	end
 
 	return func or var
@@ -574,305 +597,6 @@ function C_H_Parser:parseCPSubDecl(ctype, isFuncArg, isStructDecl)
 		name = name,
 		type = ctype,
 	})
-end
-
-
-
-
-
-function idk()
-	repeat
-		-- unlike parser/base/parser, I'm not going to save the tree here
-		-- typedef ...
-		if self:canbe('typedef', 'keyword') then
-			local srctype
-			-- next is either a previously declared typename or 'struct'/'union' followed by a struct/union def
-			if self:canbe(nil, 'name') then
-				local prefix = self:parseSignedUnsignedShortLong()
-
-				-- TODO this won't handled `signed`, `unsigned` etc without the `int` at the end ...
-				local name = self.lasttoken
-				if prefix then name = prefix..' '..name end
-
-				srctype = assert(self:getCType(name), "couldn't find type "..name)
-
-			-- typedef struct ...
-			-- typedef union ...
-			elseif self:canbe('struct', 'keyword')
-			or self:canbe('union', 'keyword')
-			then
-				-- TODO this still could either be ...
-				--  ... a named struct declaration
-				--  ... an anonymous struct declaration
-				--  ... a 'struct ____' typename
-				-- and we can't know until after we read the '{'
-
-				local srctype = self:parseStruct(self.lasttoken == 'union')
-				assert(srctype)
-
-			-- typedef enum ...
-			elseif self:canbe('enum', 'keyword') then
-				local srctype = self:parseEnum()
-				assert(srctype)
-			end
-
-			while self:canbe('*', 'symbol') do
-				srctype = self:getPtrType(srctype)
-			end
-
-			local name = self:mustbe(nil, 'name')
-
-			-- make a typedef type
-			local ctype = self:node('_ctype', {
-				parser = self,
-				isTypedef = true,
-				name = name,
-				baseType = srctype,
-			})
-			self.declTypes:insert(ctype)
-
-			self:mustbe(';', 'symbol')
-
-		-- struct ...
-		-- union ...
-		elseif self:canbe('struct', 'keyword')
-		or self:canbe('union', 'keyword')
-		then
-			local ctype = self:parseStruct(self.lasttoken == 'union')
-			self:mustbe(';', 'symbol')
-		elseif self:canbe('enum', 'keyword') then
-			local ctype = self:parseEnum()
-			self:mustbe(';', 'symbol')
-
-		-- extern ...
-		else
-			local extern = self:canbe('extern', 'keyword')
-
-			local ctypename = self:mustbe(nil, 'name')
-			local ctype = self:getCType(ctypename)
-			assert(ctype, {msg="expected ctype"})
-
-			while self:canbe('*', 'symbol') do
-				ctype = self:getPtrType(ctype)
-			end
-
-			-- TODO properly parse variable definition, including function and function-pointer definitions
-			local name = self:mustbe(nil, 'name')
-
-			while self:canbe('[', 'symbol') do
-				local count = self:mustbe(nil, 'number')
-				count = tonumber(count) or error("expected number: "..tostring(count))
-				assert.gt(count, 0, "can we allow non-positive-sized arrays?")
-				self:mustbe(']', 'symbol')
-				ctype = self:getArrayType(ctype, count)
-			end
-
-			-- TODO function here
-			local symbol = self:node('_symbol', {
-				name = name,
-				type = ctype,
-			})
-
-			if self.symbols[name] then error("already defined "..name) end
-			self.symbols[name] = symbol
-			self.symbolsInOrder:insert(symbol)
-
-			-- TODO handle [ ]
-			-- can you declare an array of functions?
-
-			self:mustbe(';', 'symbol')
-		end
-	until not self.t.token
-end
-
-function C_H_Parser:parseSignedUnsignedShortLong()
-	local prefix
-	if self:canbe('signed', 'name')
-	or self:canbe('unsigned', 'name')
-	then
-		prefix = self.lasttoken
-	end
-
-	if self:canbe('short', 'name') then
-		prefix = prefix..' '..self.lasttoken
-	elseif self:canbe('long', 'name') then
-		prefix = prefix..' '..self.lasttoken
-		if self:canbe('long', 'name') then
-			prefix = prefix..' '..self.lasttoken
-		end
-	end
-	return prefix
-end
-
--- similar to struct but without the loop over multiple named vars with the same base type
-function C_H_Parser:parseType(allowVarArray)
---DEBUG:print'parseType'
-
-	-- should these be keywords?
-	local signedness = self:parseSignedUnsignedShortLong()
-
-	--const-ness ... meh?
-	local const = self:canbe('const', 'keyword')
-
-	local structunion = self:canbe('struct', 'keyword') or self:canbe('union', 'keyword')
-
-	local name = self:mustbe(nil, 'name')
-	if structunion then
-		name = structunion..' '..name
-	end
-	if signedness then
-		name = signedness..' '..name
-	end
-
---DEBUG:print('parseType name', name)
-	-- fields ...
-	-- TODO this should be 'parsetype' and work just like variable declarations
-	-- and should be interoperable with typedefs
-	-- except typedefs can't use comma-separated list (can they?)
-	local baseFieldType = assert(self:getCType(name), "couldn't find type "..name)
---DEBUG:assert.is(baseFieldType, self.ast._ctype)
---DEBUG:print('parseType baseFieldType', baseFieldType)
---DEBUG:print('does baseFieldType* exist?', ctypes[baseFieldType.name..'*'])
-	local fieldtype = baseFieldType
-	while self:canbe('*', 'symbol') do
---DEBUG:print('...looking for ptr of type', fieldtype)
-		fieldtype = self:getPtrType(fieldtype)
---DEBUG:print('...making ptr type', fieldtype)
-		-- const-ness ... meh?
-		local const = self:canbe('const', 'keyword')
-	end
-
-	while self:canbe('[', 'symbol') do
-		local count = self:canbe(nil, 'number')
-		if count then
-			assert(count > 0, "can we allow non-positive-sized arrays?")
-		end
-		self:mustbe(']', 'symbol')
-		assert(count, "aren't [] arrays just pointers?  or we have to error about size being missing?")
-		fieldtype = self:getArrayType(fieldtype, count)
-	end
-
---DEBUG:print('parseType got', fieldtype)
-	return fieldtype
-end
-
--- assumes 'struct' or 'union' has already been parsed
--- doesn't assert closing ';' (since it could be used in typedef)
-function C_H_Parser:parseStruct(isunion)
-
-	local name = self:canbe(nil, 'name')
-	if name then
-		name = (isunion and 'union' or 'struct')..' '..name
-	end
-
-	if self:canbe('{', 'symbol') then
-		if not name then
-			error("struct/union expected name or {")
-		end
-
-		local ctype = self:getCType(name)
-		assert(ctype, "couldn't find type "..tostring(name))
-		-- TODO in the case of typedef calling this
-		-- the 'struct XXX' might not yet exist ...
-		-- hmm ...
-		return ctype
-	end
-
-	-- struct [name] { ...
-	local ctype = self:node('_ctype', {
-		name = name,	-- auto-generate a name for the anonymous struct/union
-		fields = newtable(),
-		isunion = isunion,
-		parser = self,
-	})
-
-	while true do
---DEBUG:print('field first token', token, tokentype)
-		if self:canbe('}', 'symbol') then
-			break
-		elseif self:canbe('struct', 'keyword')
-		or self:canbe('union', 'keyword')
-		then
-			-- TODO
-			-- if the next token is a { then parse a stuct
-			-- if the next token is a name then ...
-			-- 	if the next after that is { then parse a struct
-			--  if the next after that is not then it's a "struct" typename...
-
-			-- nameless struct/union's within struct/union's ...
-			-- or even if they have names, the names should get ignored?
-			-- or how long does the scope of the name of an inner struct in C last?
-
-			local nestedtype = self:parseStruct(token == 'union')
---DEBUG:assert.is(nestedtype, self.ast._ctype)
-			ctype.fields:insert(self:node('field', {
-				name = '',
-				type = nestedtype,
-			}))
-			-- what kind of name should I use for nameless nested structs?
-			self:mustbe(';', 'symbol')
-
-		elseif self:canbe(nil, 'name') then
-			-- should these be keywords?
-			local signedness = self:parseSignedUnsignedShortLong()
-			local const = self:canbe('const', 'keyword')
-			local name = self:canbe(nil, 'name')
-			if signedness then
-				name = signedness..' '..name
-			end
-
-			-- fields ...
-			-- TODO this should be 'parsetype' and work just like variable declarations
-			-- and should be interoperable with typedefs
-			-- except typedefs can't use comma-separated list (can they?)
-			local baseFieldType = assert(self:getCType(name), "couldn't find type "..name)
---DEBUG:assert.is(baseFieldType, self.ast._ctype)
-
-			while true do
-				local fieldtype = baseFieldType
-				while self:canbe('*', 'symbol') do
-					fieldtype = self:getPtrType(fieldtype)
-					-- const-ness ... meh?
-					self:canbe('const', 'keyword')
-				end
-
-				local fieldname = self:mustbe(nil, 'name')
-				-- can you have a variable named __attribute__ ?
-				if fieldname == '__attribute__' then
-					self:mustbe('(', 'symbol')
-					self:mustbe('(', 'symbol')
-					self:mustbe('packed', 'name')
-					self:mustbe(')', 'symbol')
-					self:mustbe(')', 'symbol')
-
-					fieldname = self:mustbe(nil, 'name')
-				end
-
-				while self:canbe('[', 'symbol') do
-					local count = self:nustbe(nil, 'number')
-					assert.gt(count, 0, "can we allow non-positive-sized arrays?")
-					self:mustbe('[', 'symbol')
-					fieldtype = getArrayType(fieldtype, count)
-				end
-
-				local field = self:node('_field', {
-					name = fieldname,
-					type = fieldtype,
-				})
-				ctype.fields:insert(field)
-
-				if self:canbe(';', 'symbol') then
-					break
-				elseif self:canbe(',', 'symbol') then
-					error("expected , or ;, found "..tostring(tokentype).." "..tostring(token))
-				end
-			end
-		else
-			error("got end of string")
-		end
-	end
-
-	return ctype
 end
 
 return C_H_Parser

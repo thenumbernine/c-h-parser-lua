@@ -75,10 +75,10 @@ stmtQuals::
 stmtDecls::
 	startType
 	stmtQuals
-	[
-		subDecl
-		{',' subDecl}
-	]
+	
+	-- 1-or-many, or 0-or-many?
+	subDecl
+	{',' subDecl}
 
 # This rule is for statements or struct/union fields.
 # Like int a, *b, c[2], d; makes int a, int*b, int[2]c, int d;
@@ -90,7 +90,7 @@ structDecls::
 	# but likewise, if structDecls and stmtDecls overlaps then this can harmlessly go here.
 	structDeclQuals		# struct fields can have proceeding 'const' quals only, no other quals.
 	
-	[ subDecl {',' subDecl}]
+	subDecl {',' subDecl}
 	;
 
 startType::

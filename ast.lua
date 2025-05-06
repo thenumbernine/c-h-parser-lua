@@ -45,11 +45,16 @@ function _field:serialize(out)
 	out(self.name)
 end
 
+local function funcArgsToC(funcArgs)
+	return '('..funcArgs:mapi(function(arg) return arg:toC() end):concat', '..')'
+end
+
 --[[
 args:
 	name = it could be nameless for typedef'd or anonymous nested structs
 	anonymous = true for name == nil for nested anonymous structs/unions
 	fields = it will only exist for structs
+	funcArgs = only exist for function type
 	isunion = goes with fields for unions vs structs
 	baseType = for typedefs or for arrays
 	arrayCount = if the type is an array of another type
@@ -80,6 +85,10 @@ function _ctype:init(args)
 				-- TODO don't use isConst and isPointer in the same ctype?
 				-- or names might get mixed up or something? idk
 				self.name = args.baseType.name..' const'
+			elseif args.funcArgs then
+				-- what should name even be ...
+				-- why am I even using name ...
+				self.name = self.name .. funcArgsToC(self.funcArgs)
 			else
 				error("_ctype:init with baseType, isn't arrayCount, isn't isPointer, isn't isConst ...")
 			end
@@ -96,6 +105,7 @@ function _ctype:init(args)
 	self.parser.ctypes[self.name] = self
 
 	self.fields = args.fields
+	self.funcArgs = args.funcArgs
 	self.isTypedef = args.isTypedef
 	self.isEnum = args.isEnum
 	self.isConst = args.isConst
@@ -112,6 +122,7 @@ function _ctype:init(args)
 	elseif self.isPrimitive then
 	elseif self.arrayCount then
 	elseif not self.fields then
+	elseif not self.funcArgs then
 	else
 		-- struct?
 		assert(self.fields)
@@ -151,8 +162,14 @@ function _ctype:serialize(out, varname)
 				if varname then
 					out(varname)
 				end
+			elseif self.funcArgs then
+				self.baseType:serialize(out)
+				if varname then 
+					out(varname) 
+				end
+				out(funcArgsToC(self.funcArgs))
 			else
-				error("_ctype:serialize this should match the :init's name determination ...")
+				error("_ctype:serialize this should match the :init's name determination: "..tostring(self.name))
 			end
 		else
 			out(self.name)	-- anonymous here?
@@ -208,8 +225,7 @@ function _subdecl:init(args)
 	self.type = assert.index(args, 'type')
 end
 function _subdecl:serialize(out)
-	self.type:serialize(out)
-	if self.name then out(self.name) end
+	self.type:serialize(out, self.name)
 end
 
 -- qualifiers unique to statement
@@ -228,17 +244,11 @@ local _func = nodeclass'func'
 function _func:init(args)
 	self.parser = assert.index(args, 'parser')
 	self.subdecl = assert.index(args, 'subdecl')
-	self.args = assert.index(args, 'args')
 	--.stmtQuals can be added later
 end
 function _func:serialize(out)
 	outputStmtQuals(self.stmtQuals, out)
 	self.subdecl:serialize(out)
-	out'('
-	for _,arg in ipairs(self.args) do
-		arg:serialize(out)
-	end
-	out')'
 end
 
 local _var = nodeclass'var'
