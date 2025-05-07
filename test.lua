@@ -1,6 +1,6 @@
 #!/usr/bin/env luajit
 
-local C_H_Parser = require 'c-h-parser.parser'
+local C_H_Parser = require 'c-h-parser'
 local headers = C_H_Parser()
 
 assert(headers(
