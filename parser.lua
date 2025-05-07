@@ -531,7 +531,7 @@ function C_H_Parser:parseSubDecl2(startType, isStructDecl, isFuncArg)
 	if self:canbe('(', 'symbol') then
 		-- if we're not parsing a func-arg then we'll want our var to have a name
 		-- becuase functions all need names.
-		if not isFucnArg then
+		if not isFuncArg then
 			assert(var.subdecl.name, {msg="function needs a name"})
 		end
 
@@ -554,14 +554,14 @@ function C_H_Parser:parseSubDecl2(startType, isStructDecl, isFuncArg)
 		assert(not var.type.funcArgs, {msg="can't define a function of a function, right?  It needs to be a function pointer, right?"})
 		-- TODO should I even od this?  how about a unique new funcType node? same with arrayType, ptrType, constType, structType, enumType, etc ...
 		-- but what about unique type name registration and caching ...
-		var.subdecl.type = self:node('_ctype', {
+		var.subdecl.type = self:node('_funcType', {
 			baseType = var.subdecl.type,	-- return type
 			funcArgs = funcArgs,		-- arg list
 		})
 
 		-- so func and var are the same?
 		-- except that func can't return an array or something?
-		return self:node('_func', {
+		return self:node('_var', {
 			subdecl = var.subdecl,
 		})
 	end

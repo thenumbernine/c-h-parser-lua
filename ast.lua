@@ -47,7 +47,6 @@ args:
 	name = it could be nameless for typedef'd or anonymous nested structs
 	anonymous = true for name == nil for nested anonymous structs/unions
 	fields = it will only exist for structs
-	funcArgs = only exist for function type
 	isStruct = this is a struct/union.  if no fields then it's a fwd-declare.
 	isUnion = goes with isStruct for unions vs structs
 	baseType = for typedefs or for arrays
@@ -80,10 +79,6 @@ function _ctype:init(args)
 				self.name = args.baseType.name..' const'
 			elseif args.isVolatile then
 				self.name = args.baseType.name..' volatile'
-			elseif args.funcArgs then
-				-- what should name even be ...
-				-- why am I even using name ...
-				self.name = args.baseType.name .. funcArgsToC(args.funcArgs)
 			else
 				error("_ctype:init with baseType, isn't arrayCount, isn't isPointer, isn't isConst, isn't isVolatile ...")
 			end
@@ -107,19 +102,6 @@ function _ctype:init(args)
 	self.arrayCount = args.arrayCount
 	self.isPrimitive = args.isPrimitive
 	self.isPointer = args.isPointer
-
-	assert(not (self.arrayCount and self.fields), "can't have an array of a struct - split these into two CTypes")
-
-	if self.isPointer then
-		assert(self.baseType)
-	elseif self.isPrimitive then
-	elseif self.arrayCount then
-	elseif not self.fields then
-	elseif not self.funcArgs then
-	else
-		-- fwd-decl struct?
-		-- expect :finalize to be called later
-	end
 end
 
 function _ctype:serialize(out, varname)
@@ -172,9 +154,6 @@ function _ctype:serialize(out, varname)
 				if varname then
 					out(varname)
 				end
-			elseif self.funcArgs then
-				self.baseType:serialize(out, varname)
-				out(funcArgsToC(self.funcArgs))
 			else
 				error("_ctype:serialize this should match the :init's name determination: "..tostring(self.name))
 			end
@@ -193,20 +172,6 @@ function _ctype:serialize(out, varname)
 --]]
 		end
 	end
-end
-
--- sub-declaration, when you get ()'s after the subdecl name, that means the subdecl type turns into a function-type
-local _funcType = nodeclass'_funcType'
-function _funcType:init(args)
-end
-
-local _symbol = nodeclass'symbol'
-function _symbol:init(args)
-	self.type = assert.is(assert.index(args, 'type'), _ctype)
-	self.name = assert.type(assert.index(args, 'name'), 'string')
-end
-function _symbol:serialize(out)
-	self.type:serialize(out, self.name)
 end
 
 -- this and symbol has a bit of overlap - this is typeless - symbol is valueless
@@ -256,17 +221,8 @@ local function outputStmtQuals(qualSet, out)
 	end
 end
 
-local _func = nodeclass'func'
-function _func:init(args)
-	self.subdecl = assert.index(args, 'subdecl')
-	--.stmtQuals can be added later
-end
-function _func:serialize(out)
-	outputStmtQuals(self.stmtQuals, out)
-	self.subdecl:serialize(out)
-end
-
--- TODO merge _func and _var
+-- subdecl of a variable or a function
+-- to be used in either function-arguments, struct-fields, or declarations
 local _var = nodeclass'var'
 function _var:init(args)
 	self.subdecl = assert.index(args, 'subdecl')
@@ -276,6 +232,27 @@ function _var:serialize(out)
 	outputStmtQuals(self.stmtQuals, out)
 	self.subdecl:serialize(out)
 end
+
+-- sub-declaration, when you get ()'s after the subdecl name, that means the subdecl type turns into a function-type
+local _funcType = nodeclass'funcType'
+function _funcType:init(args)
+	self.baseType = args.baseType
+	self.funcArgs = args.funcArgs
+
+	-- TODO get rid of this
+	-- what should name even be ...
+	-- why am I even using name ...
+	self.name = args.baseType.name .. funcArgsToC(args.funcArgs)
+
+end
+-- all ctype (subclasses? this isn't a subclass, but it is interchangeable with ctype)
+--  take 'varname' as the 2nd parameter
+function _funcType:serialize(out, varname)
+	self.baseType:serialize(out, varname)
+	out(funcArgsToC(self.funcArgs))
+end
+
+
 
 local _fwdDeclStruct = nodeclass'fwdDeclStruct'
 function _fwdDeclStruct:init(args)
