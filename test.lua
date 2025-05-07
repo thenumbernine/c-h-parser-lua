@@ -4,13 +4,12 @@ local C_H_Parser = require 'c-h-parser'
 local headers = C_H_Parser()
 
 assert(headers(
-	--require'ext.path''test.h':read()
+	-- [[
+	require'ext.path''test.h':read()
+	--]]
 	--[[
 	require'ext.path''jpeglib.h':read()
 	--]]
-[[
-typedef unsigned char JSAMPLE;
-]]
 ))
 
 --[=[

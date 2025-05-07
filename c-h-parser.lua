@@ -491,7 +491,7 @@ function C_H_Parser:parseStartType()
 					end
 				end
 			end
-		elseif self:canbe'short' then
+		elseif self:canbe('short', 'name') then
 			name = name..' '..self.lasttoken
 			if self:canbe('int', 'name') then
 				name = name..' '..self.lasttoken
