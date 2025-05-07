@@ -3,54 +3,9 @@
 local C_H_Parser = require 'c-h-parser.parser'
 local headers = C_H_Parser()
 
-assert(headers[[
-int i;
-int const ic;
-const int ic2;	//ooh it rearranges qualifiers to organize them and detect duplicates
-volatile int iv;
-int volatile iv2;
-const int volatile icv;
-const int volatile * volatile icvv;
-int * const ica, icb;	// => int * const a; int icb;
-int const * ica2, icb2;	// => int const * a; int const b;
-
-int arr[20];
-int arr2[20][30];
-
-typedef int INT;
-typedef int * PINT;
-typedef int INT2, * PINT2;
-
-struct namedStruct2 {};	//TODO parses but missing its empty fields...
-struct FwdStruct;
-typedef struct FwdStruct2 FwdStruct2Name;
-struct FwdStructWithVar *fsv2;
-struct {} anonStructVar;
-struct namedStructWith {} namedStructVar;
-
-int ifi(int i);
-int (ipar);
-int ((ipar2));
-
-int if1();
-int (*ifp1)();
-
-int if1ar[20]();
-int if1ari[20](int d);
-int (*if1arip[20])(int d);
-
-struct memberFuncPtrStruct {
-	int (*c)();	
-	int (*c[20])(int d);
-};
-
-typedef struct {
-	//int (*c)(int d)[20];	//function cannot return an array
-	int (*c[20])(int d);	// does that make this an array of fptrs?
-	int d;
-} (*fp)(int x, float y[20]);
-
-]])
+assert(headers(
+	require'ext.path''test.h':read()
+))
 
 --[=[
 assert(headers[[

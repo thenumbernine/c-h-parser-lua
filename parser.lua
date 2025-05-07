@@ -242,7 +242,7 @@ function C_H_Parser:parseStmtQuals(qualifiers)
 end
 
 function C_H_Parser:parseStmt()
---DEBUG:print('C_H_Parser:parseStmt nexttoken='..self.t.token)
+--DEBUG:print('C_H_Parser:parseStmt nexttoken='..tostring(self.t.token))
 
 	-- lhs of the type name ...
 	local stmtQuals = self:parseStmtQuals()
@@ -468,7 +468,8 @@ function C_H_Parser:parseSubDecl(isStructDecl, isFuncArg)
 		local quals = self:parseCVQuals()
 		
 		-- parse the rest
-		local subdecl = self:parseSubDecl2(isStructDecl, isFuncArg)
+		-- start with this layer so we can parse multiple *'s 
+		local subdecl = self:parseSubDecl(isStructDecl, isFuncArg)
 --DEBUG:assert(subdecl.serialize)
 		
 		-- wrap the rest in our ptr() and either const() or volateil()
@@ -547,6 +548,7 @@ function C_H_Parser:parseSubDecl4(isStructDecl, isFuncArg)
 	if name
 	--or isFuncArg	-- TODO this is going to be a problem
 	then
+		-- technically these aren't ctypes, they are symbol/variable/function/field names
 		subdecl = self:node('_ctype', name)
 	else
 		-- try for parenthesis-wrapping
@@ -562,7 +564,14 @@ function C_H_Parser:parseSubDecl4(isStructDecl, isFuncArg)
 		else
 			-- and after name or parenthesis
 			--  try for function-arguments
-			error{msg='too much'}
+			--error{msg='too much'}
+		
+			if not isFuncArg then
+				error{msg="only function arguments can be anonymous"}
+			end
+		
+			-- technically these aren't ctypes, they are symbol/variable/function/field names
+			subdecl = self:node('_ctype', '')
 		end
 	end
 
