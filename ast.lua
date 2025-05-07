@@ -179,8 +179,8 @@ end
 -- sub-declaration, when you get ()'s after the subdecl name, that means the subdecl type turns into a function-type
 local _funcType = nodeclass'funcType'
 function _funcType:init(ch, funcArgs)
-	self[1] = args.ch
-	self.funcArgs = args.funcArgs
+	self[1] = ch
+	self.funcArgs = funcArgs
 end
 function _funcType:serialize(out)
 	self[1]:serialize(out)

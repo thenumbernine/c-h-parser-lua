@@ -30,10 +30,10 @@ struct namedStructWith {} namedStructVar;
 
 int (ipar);
 int ((ipar2));
-/*
 
 int if1();
 int (*ifp1)();
+/*
 
 int if1ar[20]();
 int if1ari[20](int d);
