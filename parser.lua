@@ -245,8 +245,8 @@ function C_H_Parser:parseStmt()
 --DEBUG:print('C_H_Parser:parseStmt nexttoken='..tostring(self.t.token))
 
 	-- lhs of the type name ...
-	local stmtQuals = self:parseStmtQuals()
 	local isTypedef = self:canbe('typedef', 'keyword')
+	local stmtQuals = self:parseStmtQuals()
 
 	assert(not isTypedef or not stmtQuals.static, {msg="cannot combine static and typedef"})
 	assert(not isTypedef or not stmtQuals.extern, {msg="cannot combine extern and typedef"})
@@ -566,8 +566,10 @@ function C_H_Parser:parseSubDecl4(isStructDecl, isFuncArg)
 			--  try for function-arguments
 			--error{msg='too much'}
 		
-			if not isFuncArg then
-				error{msg="only function arguments can be anonymous"}
+			if not isFuncArg 
+			and not isStructDecl
+			then
+				error{msg="only function arguments or struct fields can be anonymous"}
 			end
 		
 			-- technically these aren't ctypes, they are symbol/variable/function/field names
