@@ -31,9 +31,14 @@ function AST:toC()
 			local lastChar = s:sub(-1)
 			if x == '\n' then
 				s = s .. tostring(x)
-			elseif (lastChar == '(' and x == '*')		-- no space between (*
-			or (lastChar == '*' and x == '*')
-			then
+			elseif lastChar == '(' and x == '*' then -- no space between (*
+				-- also, if the char before (* is a %w then put a space between %w and (
+				if s:sub(-2,-2):match'%w' then
+					s = s:sub(1,-2)..' (*'
+				else
+					s = s .. tostring(x)
+				end
+			elseif lastChar == '*' and x == '*' then	-- no space between **
 				s = s .. tostring(x)
 			elseif lastChar == '}' and x == ';' then	-- no space for };
 				s = s .. tostring(x)
