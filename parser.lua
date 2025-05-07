@@ -19,7 +19,7 @@ local Tokenizer = require 'parser.base.tokenizer'
 local C_H_Tokenizer = Tokenizer:subclass()
 
 function C_H_Tokenizer:initSymbolsAndKeywords()
-	for w in ([[* ( ) { } [ ] ; : ,]]):gmatch('%S+') do
+	for w in ([[* ( ) { } [ ] ; : , =]]):gmatch('%S+') do
 		self.symbols:insert(w)
 	end
 
@@ -305,7 +305,10 @@ function C_H_Parser:parseDecl(quals, isStructDecl, isFuncArg)
 	-- hack here, if we're doing a stmt decl and our base type is a struct
 	-- and it's a struct without a body
 	-- names are optional - in that event it's a fwd-declare.
-	if self.ast._structType:isa(startType)
+	if (
+		self.ast._structType:isa(startType)
+		or self.ast._enumType:isa(startType)
+	)
 	--and self:canbe(';', 'symbol') -- don't consume it, leave it for the end of stmt
 	and self.t.token == ';'
 	then
@@ -417,38 +420,38 @@ function C_H_Parser:parseStartType()
 				name = enumName,
 				baseType = assert(self.builtinTypes.uint32_t),
 			})
-			fieldDest = ctype.enumValues
+			fieldDest = ctype.enumFields
 		else
 			fieldDest = self.anonEnumValues
 		end
 
 		if self:canbe('{', 'symbol') then
 			-- define a new enum type
-			local enumValue = 0
 			local first = true
 			repeat
-				if not first then
-					self:mustbe(',', 'symbol')
-				end
-				first = false
-
-				local enumField = self:canbe(nil, 'name')
+				local enumField = self:mustbe(nil, 'name')
+			
+				local enumValue
 				if self:canbe('=', 'symbol') then
 					-- TODO handle enum expressions
 					enumValue = self:mustbe(nil, 'number')
 				end
 
-				fieldDest:insert(self:node('_enumdef', {
-					name = enumName,
-					value = enumValue,
-				}))
-				enumValue = enumValue + 1
+				fieldDest:insert(self:node('_enumdef', 
+					enumField,
+					enumValue	-- optional
+				))
+
+				if self:canbe(',', 'symbol') then 
+					if self:canbe('}', 'symbol') then break end
+				else
+					self:mustbe('}', 'symbol') 
+					break 
+				end
 			until false
-			self:canbe(',', 'symbol')
-			self:mustbe('}', 'symbol')
-		else
-			-- expect the type to exist
 		end
+	
+		return ctype
 	else
 		-- this is actually a legit typename
 		local typename = self:mustbe(nil, 'name')

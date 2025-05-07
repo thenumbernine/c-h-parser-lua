@@ -208,21 +208,33 @@ local _enumType = nodeclass'enumType'
 function _enumType:init(args)
 	self.name = args.name
 	self.baseType = args.baseType	-- always int32?
-	self.enumValues = table()	-- filled out after ctor
+	self.enumFields = table()	-- filled out after ctor
 end
 function _enumType:serialize(out)
+	out'enum'
+	if self.name then out(self.name) end
+	if #self.enumFields > 0 then
+		out'{'
+		for _,field in ipairs(self.enumFields) do
+			field:serialize(out)
+			out','
+		end
+		out'}'
+	end
 end
 
 -- this and symbol has a bit of overlap - this is typeless - symbol is valueless
 local _enumdef = nodeclass'enumdef'
-function _enumdef:init(args)
-	self.name = assert.type(assert.index(args, 'name'), 'string')
-	self.value = assert.type(assert.index(args, 'value'), 'number')	-- number?  or expression?  or name?
+function _enumdef:init(name, value)
+	self.name = name
+	self.value = value
 end
 function _enumdef:serialize(out)
 	out(self.name)
-	out'='
-	out(self.value)
+	if self.value then
+		out'='
+		out(self.value)
+	end
 end
 
 return ast
