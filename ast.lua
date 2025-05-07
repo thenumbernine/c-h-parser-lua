@@ -110,7 +110,7 @@ function _structType:init(args)
 	-- name is empty for anonymous struct/unions
 	self.name = args.name
 	self.isUnion = args.isUnion
-	-- fields is optional, empty means it is a fwd-declare struct (which can still be used in declarations of ptrs) 
+	-- fields is optional, empty means it is a fwd-declare struct (which can still be used in declarations of ptrs)
 	self.fields = args.fields
 end
 function _structType:serialize(out, varname)
@@ -118,8 +118,13 @@ function _structType:serialize(out, varname)
 	if self.name then out(self.name) end
 	if self.fields then
 		out'{'
-		for _,field in ipairs(self.fields) do
-			field:serialize(out)
+		if #self.fields > 0 then
+			out'\n'
+			for _,field in ipairs(self.fields) do
+				field:serialize(out)
+				out';'
+			out'\n'
+			end
 		end
 		out'}'
 	end

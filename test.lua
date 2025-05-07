@@ -39,10 +39,9 @@ int if1ari[20](int d);
 int (*if1arip[20])(int d);
 
 struct memberFuncPtrStruct {
-	//int (*c)();			// TODO
-	//int (*c[20])(int d);	// TODO
+	int (*c)();			// TODO
+	int (*c[20])(int d);	// TODO
 };
-
 
 ]])
 

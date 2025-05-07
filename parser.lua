@@ -378,7 +378,7 @@ function C_H_Parser:parseDecls(quals, isStructDecl, isFuncArg)
 	local decls = table()
 	repeat
 		local decl = self:parseSubDecl(startType, isStructDecl, isFuncArg)
---DEBUG:assert(decl)		
+--DEBUG:assert(decl)
 		decls:insert(decl)
 
 		-- if it's not a structDecl or a funcArg then this is a stmt decl
@@ -492,7 +492,7 @@ If this is for a function-arg then it doesn't.
 --]]
 
 function C_H_Parser:parseSubDecl(startType, isStructDecl, isFuncArg)
---DEBUG:print('C_H_Parser:parseCPSubDecl', startType, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseSubDecl', startType, isStructDecl, isFuncArg)
 	-- once we get our * then it and all subsequent *'s and const's only applies to this subdecl
 	if self:canbe('*', 'symbol') then
 		startType = self:getPtrType(startType)
@@ -505,14 +505,14 @@ function C_H_Parser:parseSubDecl(startType, isStructDecl, isFuncArg)
 			startType = self:getVolatileType(startType)
 		end
 	end
-	
+
 	local var = self:parseSubDecl2(startType, isStructDecl, isFuncArg)
 --DEBUG:assert(var)
 	return var
 end
 
 function C_H_Parser:parseSubDecl2(startType, isStructDecl, isFuncArg)
---DEBUG:print('C_H_Parser:parseCPSubDecl2', startType, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseSubDecl2', startType, isStructDecl, isFuncArg)
 
 	-- done with const's *'s and ()'s, move on to the name, array, function-args
 	local var = self:parseSubDecl3(startType, isFuncArg, isStructDecl)
@@ -533,7 +533,7 @@ function C_H_Parser:parseSubDecl2(startType, isStructDecl, isFuncArg)
 				self:mustbe(',', 'symbol')
 			end
 			first = false
-		
+
 			-- funcArg:
 			local quals = self:parseCVQuals()	-- see if there's a leading 'const'
 			-- arg 2 true = struct-type = only look for 'const' right of the type, not 'volatile', 'static', 'inline'.
@@ -561,7 +561,7 @@ function C_H_Parser:parseSubDecl2(startType, isStructDecl, isFuncArg)
 end
 
 function C_H_Parser:parseSubDecl3(startType, isStructDecl, isFuncArg)
---DEBUG:print('C_H_Parser:parseCPSubDecl3', startType, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseSubDecl3', startType, isStructDecl, isFuncArg)
 	local var = self:parseSubDecl4(startType, isStructDecl, isFuncArg)
 
 	-- while-loop for multiple x[1][1][1]... ... can anything go between array decls?
@@ -582,30 +582,30 @@ function C_H_Parser:parseSubDecl3(startType, isStructDecl, isFuncArg)
 end
 
 function C_H_Parser:parseSubDecl4(startType, isStructDecl, isFuncArg)
---DEBUG:print('C_H_Parser:parseCPSubDecl4', startType, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseSubDecl4', startType, isStructDecl, isFuncArg)
 	if self:canbe('(', 'symbol') then
 		-- What do ( ) around a decl name do? scare off macros?
 		-- TODO maybe I should wrap this in a _par AST node
 		--  since for arrays we're going to complain if it's on any AST node other than the inner-most non-parenthsis AST node.
 		local var = self:parseSubDecl5(startType, isStructDecl, isFuncArg)
---DEBUG:assert(var)		
+--DEBUG:assert(var)
 		self:mustbe(')', 'symbol')
 		-- TODO _parenthesis-wrapping node?
 		-- especially for making sure that function declarations only have arrays on the inner-most parentehsis?
 		return var
 	else
 		local var = self:parseSubDecl5(startType, isStructDecl, isFuncArg)
---DEBUG:assert(var)		
+--DEBUG:assert(var)
 		return var
 	end
 end
 
 function C_H_Parser:parseSubDecl5(startType, isStructDecl, isFuncArg)
---DEBUG:print('C_H_Parser:parseCPSubDecl5', startType, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseSubDecl5', startType, isStructDecl, isFuncArg)
 	local var = self:parseSubDecl6(startType, isStructDecl, isFuncArg)
 
 	if isStructDecl
-	and self:canbe(':', 'symbol') 
+	and self:canbe(':', 'symbol')
 	then
 		local bitfield = self:mustbe(nil, 'number')
 		var.subdecl.type = self:getBitFieldType(var.subdecl.type, bitfield)
@@ -615,15 +615,27 @@ function C_H_Parser:parseSubDecl5(startType, isStructDecl, isFuncArg)
 end
 
 function C_H_Parser:parseSubDecl6(startType, isStructDecl, isFuncArg)
---DEBUG:print('C_H_Parser:parseCPSubDecl6', startType, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseSubDecl6', startType, isStructDecl, isFuncArg)
 --DEBUG:assert(startType)
-	-- I could make a separte rule or three for this but nah ... just if's for ( and )
-	
+
 	local name = self:canbe(nil, 'name')
+
+	--[[
+	if name is optional (i.e. for func args)
+	then how to distinguish th 1st arsg from the 2nd args in `int(x)(int)`
+	... when we parse the 1st parenthesis, we dont know if it's going to be a name with qualiifers or a list of funcargs/subdecls
+
+	when is name required, and when is it optional?
+	- required for root-level declarations.
+	- optional for root-level struct declarations ... in which case we expect no-subdecls, i.e. expect ';'.
+	- optional for function-args
+	--]]
 
 	-- if not isFuncArg then must be name, but here it might be another subexpression so ...
 	-- TODO my recursion order is messed up I'm sure
-	if name or isFuncArg then
+	if name
+	--or isFuncArg	-- TODO this is going to be a problem
+	then
 		local subdecl = self:node('_subdecl', {
 			isFuncArg = isFuncArg,
 			isStructDecl = isStructDecl,
