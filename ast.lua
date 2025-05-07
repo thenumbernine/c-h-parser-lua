@@ -32,62 +32,65 @@ end
 ast.nodeclass = nodeclass
 
 
-local function funcArgsToC(funcArgs)
-	return '('..funcArgs:mapi(function(arg) return arg:toC() end):concat', '..')'
-end
-
 local _ctype = nodeclass'ctype'
-function _ctype:init(args)
-	args = args or {}
-	self.name = args.name
+function _ctype:init(name)
+	self.name = name
 end
-
 function _ctype:serialize(out, varname)
 	out(self.name)
 	if varname then out(varname) end
 end
 
-local _ptrType = nodeclass'ptrType'
-function _ptrType:init(args)
-	self.baseType = args.baseType
+local _ptr = nodeclass'ptr'
+function _ptr:init(ch)
+	self[1] = ch
 end
-function _ptrType:serialize(out, varname)
-	self.baseType:serialize(out)
+function _ptr:serialize(out)
 	out'*'
-	if varname then out(varname) end
+	self[1]:serialize(out)
 end
 
-local _constType = nodeclass'constType'
-function _constType:init(args)
-	self.baseType = args.baseType
+local _const = nodeclass'const'
+function _const:init(ch)
+	self[1] = ch
 end
-function _constType:serialize(out, varname)
-	self.baseType:serialize(out)
+function _const:serialize(out)
 	out'const'
-	if varname then out(varname) end
+	self[1]:serialize(out)
 end
 
-local _volatileType = nodeclass'volatileType'
-function _volatileType:init(args)
-	self.baseType = args.baseType
+local _volatile = nodeclass'volatile'
+function _volatile:init(ch)
+	self[1] = ch
 end
-function _volatileType:serialize(out, varname)
-	self.baseType:serialize(out)
+function _volatile:serialize(out)
 	out'volatile'
-	if varname then out(varname) end
+	self[1]:serialize(out)
 end
 
-local _arrayType = nodeclass'arrayType'
-function _arrayType:init(args)
-	self.baseType = args.baseType
-	self.arrayCount = args.arrayCount
+local _array = nodeclass'array'
+function _array:init(ch, count)
+	self[1] = ch
+	self.count = count
 end
-function _arrayType:serialize(out, varname)
-	self.baseType:serialize(out, varname)
+function _array:serialize(out)
+	self[1]:serialize(out)
 	out'['
-	out(self.arrayCount)
+	out(self.count)
 	out']'
 end
+
+local _bitfield = nodeclass'bitfield'
+function _bitfield:init(ch, bits)
+	self[1] = ch
+	self.bits = bits
+end
+function _bitfield:serialize(out)
+	self[1]:serialize(out)
+	out':'
+	out(self.bits)
+end
+
 
 -- qualifiers unique to statement
 -- don't include "const" and "volatile" because they are forwarded on to the first subdecl
@@ -126,11 +129,11 @@ end
 
 local _typedef = nodeclass'typedef'
 function _typedef:init(decl)
-	self.decl = decl
+	self[1] = decl
 end
 function _typedef:serialize(out)
 	out'typedef'
-	self.decl:serialize(out)
+	self[1]:serialize(out)
 end
 
 local _structType = nodeclass'structType'
@@ -161,30 +164,6 @@ function _structType:serialize(out, varname)
 	end
 end
 
---[[
-this is half of a declaration.
-the other half is the type
-this is created and returned to the rest for creating things like
-- symbols declarations (variables, functions)
-- struct fields
-- function args
---]]
-local _subdecl = nodeclass'subdecl'
-function _subdecl:init(args)
-	self.isFuncArg = args.isFuncArg	-- do I need to store?
-	self.isStructDecl = args.isStructDecl	-- do I need to store?
-	self.name = args.name			-- optional for function args (isFuncArg) or anonymous struct/union fields
-	if not (self.isFuncArg) then
-		-- technically anonymous declarations just give you warnings that nothing is being defined...
-		assert(self.name, "expected name")
-	end
-	self.type = assert.index(args, 'type')
-end
--- TODO do subdecls have varnames ...?
-function _subdecl:serialize(out)
-	self.type:serialize(out, self.name)
-end
-
 -- pars should be a form of subdecl that just wraps subdecls ...
 -- this is going to make subdecl a part of the ast serialization ...
 local _partype = nodeclass'partype'
@@ -209,15 +188,20 @@ end
 
 -- sub-declaration, when you get ()'s after the subdecl name, that means the subdecl type turns into a function-type
 local _funcType = nodeclass'funcType'
-function _funcType:init(args)
-	self.baseType = args.baseType
+function _funcType:init(ch, funcArgs)
+	self[1] = args.ch
 	self.funcArgs = args.funcArgs
 end
--- all ctype (subclasses? this isn't a subclass, but it is interchangeable with ctype)
---  take 'varname' as the 2nd parameter
-function _funcType:serialize(out, varname)
-	self.baseType:serialize(out, varname)
-	out(funcArgsToC(self.funcArgs))
+function _funcType:serialize(out)
+	self[1]:serialize(out)
+	out'('
+	local sep
+	for _,arg in ipairs(self.funcArgs) do
+		if sep then out(sep) end
+		arg:serialize(out)
+		sep = ','
+	end
+	out')'
 end
 
 -- wrapper to let the parser know that a stmt was a single struct -- no typedef, no vars, no nothing.
