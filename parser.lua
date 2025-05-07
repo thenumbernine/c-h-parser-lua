@@ -62,7 +62,6 @@ C_H_Parser.ast = require 'c-h-parser.ast'
 
 function C_H_Parser:getPtrType(baseType)
 	return self:node('_ctype', {
-		parser = self,
 		baseType = baseType,
 		isPointer = true,
 	})
@@ -70,7 +69,6 @@ end
 
 function C_H_Parser:getConstType(baseType)
 	return self:node('_ctype', {
-		parser = self,
 		baseType = baseType,
 		isConst = true,
 	})
@@ -78,16 +76,13 @@ end
 
 function C_H_Parser:getVolatileType(baseType)
 	return self:node('_ctype', {
-		parser = self,
 		baseType = baseType,
 		isVolatile = true,
 	})
 end
 
-
 function C_H_Parser:getArrayType(baseType, arrayCount)
 	return self:node('_ctype', {
-		parser = self,
 		baseType = baseType,
 		arrayCount = arrayCount,
 	})
@@ -293,14 +288,13 @@ function C_H_Parser:parseStmt()
 
 --DEBUG:print('pre-decl qualifiers:', require'ext.tolua'(stmtQuals))
 
-	local decls = self:parseDecls(stmtQuals, false, false)	-- false == not a struct, false == not a function-arg
+	local decls, ctype = self:parseDecls(stmtQuals, false, false)	-- false == not a struct, false == not a function-arg
 
 	if isTypedef then
 		-- insert all as typedefs
 		for _,decl in ipairs(decls) do
 			-- add typedefs
 			self.declTypes:insert(self:node('_ctype', {
-				parser = self,
 				isTypedef = true,
 				baseType = decl.subdecl.type,
 				name = assert.index(decl.subdecl, 'name'),
@@ -324,9 +318,8 @@ but if we get 'struct ${name} *declName1;' (notice ptr, because you can't do thi
 ... then it's symbol code ...
 ... but because it contains a new type in the name, it should still go in the type code.
 --]]
-				local baseType = decl.subdecl.type:getBaseMostType()
-				if baseType.isStruct
-				and not baseType.fields
+				if ctype.isStruct
+				and not ctype.fields
 				then
 					self.declTypes:insert(decl)
 				else
@@ -369,7 +362,6 @@ function C_H_Parser:parseDecls(quals, isStructDecl, isFuncArg)
 	and self.t.token == ';'
 	then
 		local fwdDecl = self:node('_fwdDeclStruct', {
-			parser = self,
 			type = startType,
 		})
 		return {fwdDecl}
@@ -402,7 +394,7 @@ function C_H_Parser:parseDecls(quals, isStructDecl, isFuncArg)
 		-- if isFuncArg then don't handle multiple names after the type
 		if isFuncArg then break end
 	until not self:canbe(',', 'symbol')
-	return decls
+	return decls, startType
 end
 
 function C_H_Parser:parseCVQuals()
@@ -430,7 +422,6 @@ function C_H_Parser:parseStartType()
 				self:mustbe(';', 'symbol')
 			end
 			return self:node('_ctype', {
-				parser = self,
 				name = structName 
 					and (isUnion and 'union ' or 'struct '..structName) 
 					or nil,
@@ -443,7 +434,6 @@ function C_H_Parser:parseStartType()
 		-- and then it's a forward-declaration of a struct, for the sake of other decl prototypes ...
 		-- ... TODO really just use self.tree anyways.
 		local ctype = self:node('_ctype', {
-			parser = self,
 			name = structName
 				and (isUnion and 'union ' or 'struct '..structName) 
 				or nil,
@@ -462,7 +452,6 @@ function C_H_Parser:parseStartType()
 			-- but instead return the enum name and enum values to whoever called this
 			-- and then based on 'typedef' or not, define the type versus look the type up.
 			ctype = self:node('_ctype', {
-				parser = self,
 				name = enumName,
 				baseType = assert(self.builtinTypes.uint32_t),
 				isEnum = true,
@@ -490,7 +479,6 @@ function C_H_Parser:parseStartType()
 				end
 
 				fieldDest:insert(self:node('_enumdef', {
-					parser = self,
 					name = enumName,
 					value = enumValue,
 				}))
@@ -504,7 +492,6 @@ function C_H_Parser:parseStartType()
 	else
 		local typename = self:mustbe(nil, 'name')
 		return self:node('_ctype', {
-			parser = self,
 			name = typename,
 		})
 	end
@@ -568,7 +555,6 @@ function C_H_Parser:parseSubDecl2(startType, isStructDecl, isFuncArg)
 		-- TODO should I even od this?  how about a unique new funcType node? same with arrayType, ptrType, constType, structType, enumType, etc ...
 		-- but what about unique type name registration and caching ...
 		var.subdecl.type = self:node('_ctype', {
-			parser = self,
 			baseType = var.subdecl.type,	-- return type
 			funcArgs = funcArgs,		-- arg list
 		})
@@ -576,7 +562,6 @@ function C_H_Parser:parseSubDecl2(startType, isStructDecl, isFuncArg)
 		-- so func and var are the same?
 		-- except that func can't return an array or something?
 		return self:node('_func', {
-			parser = self,
 			subdecl = var.subdecl,
 		})
 	end
@@ -650,7 +635,6 @@ function C_H_Parser:parseSubDecl6(startType, isStructDecl, isFuncArg)
 	-- TODO my recursion order is messed up I'm sure
 	if name or isFuncArg then
 		local subdecl = self:node('_subdecl', {
-			parser = self,
 			isFuncArg = isFuncArg,
 			isStructDecl = isStructDecl,
 			name = name,
@@ -658,7 +642,6 @@ function C_H_Parser:parseSubDecl6(startType, isStructDecl, isFuncArg)
 		})
 
 		return self:node('_var', {
-			parser = self,
 			subdecl = subdecl,
 		})
 	end

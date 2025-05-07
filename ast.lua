@@ -57,9 +57,6 @@ args:
 	isConst
 	isVolatile
 
-TODO parser needs to be in here so just use this one and not nodeclass?
-or move this one's parser-specific code into CParser.ast:node() ?
-
 usage: (TODO subclasses?)
 primitives: name isPrimitive size get set
 typedef: name baseType
@@ -97,7 +94,6 @@ function _ctype:init(args)
 	else
 --DEBUG:print('...CType already has name', self.name)
 	end
-	self.parser = assert.index(args, 'parser')	-- there for prims, not needed otherwise
 	
 	self.fields = args.fields
 	self.funcArgs = args.funcArgs
@@ -131,7 +127,7 @@ function _ctype:serialize(out, varname)
 	if self.isTypedef then
 		out'typedef'
 		self.baseType:serialize(out)
-		out(self.name)
+		out(self.name)	-- .name is the typedef's name
 	elseif self.isStruct then
 		out(self.name or (
 			self.isUnion and 'union' or 'struct'
@@ -146,7 +142,7 @@ function _ctype:serialize(out, varname)
 		if varname then
 			out(varname)
 		end
-	elseif self.name then
+	else -- if self.name then
 --[[ use the stored name		
 		out(self.name)
 --]]
@@ -194,16 +190,14 @@ function _ctype:serialize(out, varname)
 				end
 				out'}'
 			end
-		end
 --]]
-	else
-		out'#ERROR'
+		end
 	end
 end
 
-function _ctype:getBaseMostType()
-	if not self.baseType then return self end
-	return self.baseType:getBaseMostType()
+-- sub-declaration, when you get ()'s after the subdecl name, that means the subdecl type turns into a function-type
+local _funcType = nodeclass'_funcType'
+function _funcType:init(args)
 end
 
 local _symbol = nodeclass'symbol'
@@ -237,7 +231,6 @@ this is created and returned to the rest for creating things like
 --]]
 local _subdecl = nodeclass'subdecl'
 function _subdecl:init(args)
-	self.parser = assert.index(args, 'parser')
 	self.isFuncArg = args.isFuncArg	-- does it matter?
 	self.isStructDecl = args.isStructDecl	-- does it matter?
 	self.name = args.name			-- optional for isFuncArg
@@ -265,7 +258,6 @@ end
 
 local _func = nodeclass'func'
 function _func:init(args)
-	self.parser = assert.index(args, 'parser')
 	self.subdecl = assert.index(args, 'subdecl')
 	--.stmtQuals can be added later
 end
@@ -277,7 +269,6 @@ end
 -- TODO merge _func and _var
 local _var = nodeclass'var'
 function _var:init(args)
-	self.parser = assert.index(args, 'parser')
 	self.subdecl = assert.index(args, 'subdecl')
 	--.stmtQuals can be added later
 end
@@ -288,7 +279,6 @@ end
 
 local _fwdDeclStruct = nodeclass'fwdDeclStruct'
 function _fwdDeclStruct:init(args)
-	self.parser = assert.index(args, 'parser')
 	self.type = assert.index(args, 'type')
 end
 function _fwdDeclStruct:serialize(out)
