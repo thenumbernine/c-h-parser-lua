@@ -270,7 +270,15 @@ function C_H_Parser:parseStmt()
 		self.declTypes:insert(self:node('_typedef', decl))
 	else
 		-- if decl's type is a struct with a body then it goes in declTypes
-		if self.ast._structType:isa(decl.baseType) then
+		local lhsType = decl.baseType
+		while self.ast._const:isa(lhsType) 
+		or self.ast._volatile:isa(lhsType) 
+		do
+			lhsType = lhsType[1]
+		end
+		if self.ast._structType:isa(lhsType)
+		or self.ast._enumType:isa(lhsType)
+		then
 			self.declTypes:insert(decl)
 		else
 			self.symbolsInOrder:insert(decl)
