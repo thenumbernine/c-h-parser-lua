@@ -202,9 +202,8 @@ function _fwdDecl:serialize(out)
 end
 
 local _enumType = nodeclass'enumType'
-function _enumType:init(args)
-	self.name = args.name
-	self.baseType = args.baseType	-- always int32?
+function _enumType:init(name)
+	self.name = name
 	self.enumFields = table()	-- filled out after ctor
 end
 function _enumType:serialize(out)

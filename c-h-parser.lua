@@ -62,9 +62,6 @@ C_H_Parser.ast = require 'c-h-parser.ast'
 
 -- forward to __call
 function C_H_Parser:init(args)
-	-- used for referencing later
-	self.builtinTypes = {}
-
 	-- put declared types in-order here
 	self.declTypes = table()
 
@@ -77,80 +74,6 @@ function C_H_Parser:init(args)
 	-- TODO function defs in order
 
 	self.anonEnumValues = table()
-
-	-- init ctypes ...
-	-- https://en.wikipedia.org/wiki/C_data_types
-	-- TODO I don't need these anymore, except enum points to them but doesn't use it
-	for _,name in ipairs(string.split(string.trim[[
-void
-bool
-char
-
-signed
-signed char
-signed int
-signed short
-signed short int
-signed long
-signed long int
-signed long long
-signed long long int
-
-unsigned
-unsigned char
-unsigned int
-unsigned short
-unsigned short int
-unsigned long
-unsigned long int
-unsigned long long
-unsigned long long int
-
-short
-short int
-long
-long int
-long double
-long long
-long long int
-
-int
-float
-double
-int8_t
-uint8_t
-int16_t
-uint16_t
-int32_t
-uint32_t
-int64_t
-uint64_t
-int_least8_t
-uint_least8_t
-int_least16_t
-uint_least16_t
-int_least32_t
-uint_least32_t
-int_least64_t
-uint_least64_t
-int_fast8_t
-uint_fast8_t
-int_fast16_t
-uint_fast16_t
-int_fast32_t
-uint_fast32_t
-int_fast64_t
-uint_fast64_t
-intptr_t
-uintptr_t
-intmax_t
-uintmax_t
-size_t
-ssize_t
-ptrdiff_t
-]], '\n')) do
-		self.builtinTypes[name] = self:node('_ctype', name)
-	end
 
 	if args then
 		assert(self(args))
@@ -431,11 +354,7 @@ function C_H_Parser:parseStartType()
 	elseif self:canbe('enum', 'keyword') then
 		local enumName = self:canbe(nil, 'name')
 
-		local ctype = self:node('_enumType', {
-			name = enumName,
-			-- TODO does C have different enum types?
-			baseType = assert(self.builtinTypes.uint32_t),
-		})
+		local ctype = self:node('_enumType', enumName)
 		
 		if self:canbe('{', 'symbol') then
 			-- define a new enum type
@@ -466,6 +385,9 @@ function C_H_Parser:parseStartType()
 		return ctype
 	else
 		local name = ''
+		-- init ctypes ...
+		-- https://en.wikipedia.org/wiki/C_data_types
+		-- TODO I don't need these anymore, except enum points to them but doesn't use it	
 		if self:canbe('signed', 'name')
 		or self:canbe('unsigned', 'name')
 		then
@@ -492,12 +414,12 @@ function C_H_Parser:parseStartType()
 				end
 			end
 		elseif self:canbe('short', 'name') then
-			name = name..' '..self.lasttoken
+			name = self.lasttoken
 			if self:canbe('int', 'name') then
 				name = name..' '..self.lasttoken
 			end	
 		elseif self:canbe('long', 'name') then
-			name = name..' '..self.lasttoken
+			name = self.lasttoken
 			if self:canbe('int', 'name') 
 			or self:canbe('double', 'name')
 			then
