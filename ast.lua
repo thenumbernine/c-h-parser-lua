@@ -169,21 +169,11 @@ end
 local _partype = nodeclass'partype'
 function _partype:init(arg)
 	self[1] = arg
-	-- because i'm lazy
-	self.subdecl = arg.subdecl
 end
 function _partype:serialize(out, varname)
-	self[1]:serialize(out, '('..(varname or '')..')')
-end
-
--- subdecl of a variable or a function
--- to be used in either function-arguments, struct-fields, or declarations
-local _var = nodeclass'var'
-function _var:init(args)
-	self.subdecl = assert.index(args, 'subdecl')
-end
-function _var:serialize(out)
-	self.subdecl:serialize(out)
+	out'('
+	self[1]:serialize(out)
+	out')'
 end
 
 -- sub-declaration, when you get ()'s after the subdecl name, that means the subdecl type turns into a function-type
@@ -207,11 +197,11 @@ end
 -- wrapper to let the parser know that a stmt was a single struct -- no typedef, no vars, no nothing.
 -- then it goes on the 'declTypes'
 local _fwdDeclStruct = nodeclass'fwdDeclStruct'
-function _fwdDeclStruct:init(args)
-	self.type = assert.index(args, 'type')
+function _fwdDeclStruct:init(startType)
+	self[1] = startType
 end
 function _fwdDeclStruct:serialize(out)
-	self.type:serialize(out)
+	self[1]:serialize(out)
 end
 
 local _enumType = nodeclass'enumType'

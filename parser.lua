@@ -269,7 +269,12 @@ function C_H_Parser:parseStmt()
 		-- typedef struct name; is invalid, so this should have subdecls after it ...
 		self.declTypes:insert(self:node('_typedef', decl))
 	else
-		self.symbolsInOrder:insert(decl)
+		-- if decl's type is a struct with a body then it goes in declTypes
+		if self.ast._structType:isa(decl.baseType) then
+			self.declTypes:insert(decl)
+		else
+			self.symbolsInOrder:insert(decl)
+		end
 	end
 end
 
@@ -309,9 +314,7 @@ function C_H_Parser:parseDecl(quals, isStructDecl, isFuncArg)
 		assert.eq(next(quals), nil, {msg="if you just have a struct definition without variables, it can't have qualifiers"})
 
 		-- TODO not necessary? Just check for a struct-decl that has no subdecls (and no name?)
-		local fwdDecl = self:node('_fwdDeclStruct', {
-			type = startType,
-		})
+		local fwdDecl = self:node('_fwdDeclStruct', startType)
 --DEBUG:assert(fwdDecl.serialize)		
 		return fwdDecl
 	end

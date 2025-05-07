@@ -29,8 +29,8 @@ struct {} anonStructVar;
 struct namedStructWith {} namedStructVar;
 
 int (ipar);
-/*
 int ((ipar2));
+/*
 
 int if1();
 int (*ifp1)();
