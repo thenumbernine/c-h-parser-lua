@@ -31,11 +31,13 @@ function AST:toC()
 			local lastChar = s:sub(-1)
 			if x == '\n' then
 				s = s .. tostring(x)
-			elseif lastChar == '(' and x == '*' then	-- no space between (*
+			elseif (lastChar == '(' and x == '*')		-- no space between (*
+			or (lastChar == '*' and x == '*')
+			then
 				s = s .. tostring(x)
 			elseif lastChar == '}' and x == ';' then	-- no space for };
 				s = s .. tostring(x)
-			elseif x == '*' or x == '{' then			-- put only space before these
+			elseif x == '*' or x == '{' then					-- put only space before these
 				s = s .. sep .. tostring(x)
 			elseif lastChar == '}' or lastChar == ',' then		-- space after only
 				s = s .. sep .. tostring(x)
