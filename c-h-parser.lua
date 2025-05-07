@@ -80,38 +80,43 @@ function C_H_Parser:init(args)
 
 	-- init ctypes ...
 	-- https://en.wikipedia.org/wiki/C_data_types
+	-- TODO I don't need these anymore, except enum points to them but doesn't use it
 	for _,name in ipairs(string.split(string.trim[[
 void
 bool
 char
+
+signed
 signed char
-unsigned char
-short
-short int
+signed int
 signed short
 signed short int
-unsigned short
-unsigned short int
-int
-signed
-signed int
-unsigned
-unsigned int
-long
-long int
 signed long
 signed long int
-unsigned long
-unsigned long int
-long long
-long long int
 signed long long
 signed long long int
+
+unsigned
+unsigned char
+unsigned int
+unsigned short
+unsigned short int
+unsigned long
+unsigned long int
 unsigned long long
 unsigned long long int
+
+short
+short int
+long
+long int
+long double
+long long
+long long int
+
+int
 float
 double
-long double
 int8_t
 uint8_t
 int16_t
@@ -460,9 +465,53 @@ function C_H_Parser:parseStartType()
 	
 		return ctype
 	else
-		-- this is actually a legit typename
-		local typename = self:mustbe(nil, 'name')
-		return self:node('_ctype', typename)
+		local name = ''
+		if self:canbe('signed', 'name')
+		or self:canbe('unsigned', 'name')
+		then
+			name = self.lasttoken
+			if self:canbe('int', 'name') 
+			or self:canbe('char', 'name')
+			then
+				name = name..' '..self.lasttoken
+				-- and done
+			elseif self:canbe('short', 'name') then
+				name = name..' '..self.lasttoken
+				if self:canbe('int', 'name') then
+					name = name..' '..self.lasttoken
+				end
+			elseif self:canbe('long', 'name') then
+				name = name..' '..self.lasttoken
+				if self:canbe('int', 'name') then
+					name = name..' '..self.lasttoken
+				elseif self:canbe('long', 'name') then
+					name = name..' '..self.lasttoken
+					if self:canbe('int', 'name') then
+						name = name..' '..self.lasttoken
+					end
+				end
+			end
+		elseif self:canbe'short' then
+			name = name..' '..self.lasttoken
+			if self:canbe('int', 'name') then
+				name = name..' '..self.lasttoken
+			end	
+		elseif self:canbe('long', 'name') then
+			name = name..' '..self.lasttoken
+			if self:canbe('int', 'name') 
+			or self:canbe('double', 'name')
+			then
+				name = name..' '..self.lasttoken
+			elseif self:canbe('long', 'name') then
+				name = name..' '..self.lasttoken
+				if self:canbe('int', 'name') then
+					name = name..' '..self.lasttoken
+				end
+			end	
+		else
+			name = self:mustbe(nil, 'name')
+		end
+		return self:node('_ctype', name)
 	end
 end
 

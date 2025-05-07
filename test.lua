@@ -9,7 +9,7 @@ assert(headers(
 	require'ext.path''jpeglib.h':read()
 	--]]
 [[
-enum { JPEGLIB_H = 1 };
+typedef unsigned char JSAMPLE;
 ]]
 ))
 
