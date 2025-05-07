@@ -198,25 +198,30 @@ function C_H_Parser:parseStmt()
 		then
 			-- nameless enum without decls?
 			-- put all its fields in the global list
-			self.anonEnumValues:append(assert(decl[1].enumFields))
+			self.anonEnumValues:append(assert(decl[1].fields))
 		else
 			self.declTypes:insert(decl)
-		end	
+		end
 	elseif isTypedef then
 		-- typedef struct name; is invalid, so this should have subdecls after it ...
 		self.declTypes:insert(self:node('_typedef', decl))
 	else
+
 		-- if decl's type is a struct with a body then it goes in declTypes
 		local lhsType = decl.baseType
-		while self.ast._const:isa(lhsType) 
-		or self.ast._volatile:isa(lhsType) 
+		while self.ast._const:isa(lhsType)
+		or self.ast._volatile:isa(lhsType)
 		do
 			lhsType = lhsType[1]
 		end
-	
-		if self.ast._structType:isa(lhsType)
-		or self.ast._enumType:isa(lhsType)
+
+		if (
+			self.ast._structType:isa(lhsType)
+			or self.ast._enumType:isa(lhsType)
+		)
+		and lhsType.fields	-- fields = defining a struct/enum as a type ... or not?  still a valid function declaration ... hmm
 		then
+			-- TODO when to consider this
 			self.declTypes:insert(decl)
 		else
 			self.symbolsInOrder:insert(decl)
@@ -320,13 +325,14 @@ function C_H_Parser:parseStartType()
 	or self:canbe('union', 'keyword')
 	then
 		local isUnion = self.lasttoken == 'union'
-		local structName = self:canbe(nil, 'name')
-		-- now "struct "..structName is our type that we should test for collision.
+		local name = self:canbe(nil, 'name')
+		-- now "struct "..name is our type that we should test for collision.
 		-- TODO here's where ctypes won't recognize this
 		-- or for no name, don't lookup in ctypes cuz it's anonymous
 
+		local fields
 		if self:canbe('{', 'symbol') then
-			local fields = table()
+			fields = table()
 			while not self:canbe('}', 'symbol') do
 				local quals = self:parseCVQuals()
 				-- 2nd 'true' means struct-decls, means only look for 'const' qualifier and not the rest (volatile extern etc)
@@ -335,64 +341,54 @@ function C_H_Parser:parseStartType()
 				fields:insert(fielddecl)
 				self:mustbe(';', 'symbol')
 			end
-			return self:node('_structType', {
-				name = structName,	-- nil for anonymous
-				isUnion = isUnion,
-				fields = fields,
-			})
 		end
-		-- else ... better have a name
-		-- and then it's a forward-declaration of a struct, for the sake of other decl prototypes ...
-		-- ... TODO really just use self.tree anyways.
-		local ctype = self:node('_structType', {
-			name = structName,	-- nil for anonymous
+		return self:node('_structType', {
+			name = name,	-- nil for anonymous
 			isUnion = isUnion,
-			-- fwd-declare ...
-			-- but still legit here cuz it could be used for ptr-types in the same stmt.
+			fields = fields,
 		})
-		return ctype
 	elseif self:canbe('enum', 'keyword') then
 		local enumName = self:canbe(nil, 'name')
 
-		local ctype = self:node('_enumType', enumName)
-		
+		local fields
 		if self:canbe('{', 'symbol') then
+			fields = table()
 			-- define a new enum type
 			local first = true
 			repeat
 				local enumField = self:mustbe(nil, 'name')
-			
+
 				local enumValue
 				if self:canbe('=', 'symbol') then
 					-- TODO handle enum expressions
 					enumValue = self:mustbe(nil, 'number')
 				end
 
-				ctype.enumFields:insert(self:node('_enumdef', 
+				fields:insert(self:node('_enumdef',
 					enumField,
 					enumValue	-- optional
 				))
 
-				if self:canbe(',', 'symbol') then 
+				if self:canbe(',', 'symbol') then
 					if self:canbe('}', 'symbol') then break end
 				else
-					self:mustbe('}', 'symbol') 
-					break 
+					self:mustbe('}', 'symbol')
+					break
 				end
 			until false
 		end
-	
-		return ctype
+
+		return self:node('_enumType', enumName, fields)
 	else
 		local name = ''
 		-- init ctypes ...
 		-- https://en.wikipedia.org/wiki/C_data_types
-		-- TODO I don't need these anymore, except enum points to them but doesn't use it	
+		-- TODO I don't need these anymore, except enum points to them but doesn't use it
 		if self:canbe('signed', 'name')
 		or self:canbe('unsigned', 'name')
 		then
 			name = self.lasttoken
-			if self:canbe('int', 'name') 
+			if self:canbe('int', 'name')
 			or self:canbe('char', 'name')
 			then
 				name = name..' '..self.lasttoken
@@ -417,10 +413,10 @@ function C_H_Parser:parseStartType()
 			name = self.lasttoken
 			if self:canbe('int', 'name') then
 				name = name..' '..self.lasttoken
-			end	
+			end
 		elseif self:canbe('long', 'name') then
 			name = self.lasttoken
-			if self:canbe('int', 'name') 
+			if self:canbe('int', 'name')
 			or self:canbe('double', 'name')
 			then
 				name = name..' '..self.lasttoken
@@ -429,7 +425,7 @@ function C_H_Parser:parseStartType()
 				if self:canbe('int', 'name') then
 					name = name..' '..self.lasttoken
 				end
-			end	
+			end
 		else
 			name = self:mustbe(nil, 'name')
 		end
@@ -447,11 +443,11 @@ function C_H_Parser:parseSubDecl(isStructDecl, isFuncArg)
 	if self:canbe('*', 'symbol') then
 		-- parse 'const' or 'volatile', which have to always follow a *, or be on the startType
 		local quals = self:parseCVQuals()
-		
+
 		-- parse the rest
-		-- start with this layer so we can parse multiple *'s 
+		-- start with this layer so we can parse multiple *'s
 		local subdecl = self:parseSubDecl(isStructDecl, isFuncArg)
-		
+
 		-- wrap the rest in our ptr() and either const() or volateil()
 		if quals.const then
 			subdecl = self:node('_const', subdecl)
@@ -479,7 +475,7 @@ function C_H_Parser:parseSubDecl2(isStructDecl, isFuncArg)
 		local arrayCount = self:mustbe(nil, 'number')
 		arrayCount = tonumber(arrayCount) or error{msg="bad array size "..arrayCount}
 		self:mustbe(']', 'symbol')
-	
+
 		subdecl = self:node('_array', subdecl, arrayCount)
 	end
 
@@ -540,13 +536,13 @@ function C_H_Parser:parseSubDecl4(isStructDecl, isFuncArg)
 			-- and after name or parenthesis
 			--  try for function-arguments
 			--error{msg='too much'}
-		
-			if not isFuncArg 
+
+			if not isFuncArg
 			and not isStructDecl
 			then
 				error{msg="only function arguments or struct fields can be anonymous"}
 			end
-		
+
 			-- technically these aren't ctypes, they are symbol/variable/function/field names
 			subdecl = self:node('_var', '')
 		end
@@ -592,7 +588,7 @@ function C_H_Parser:parseSubDecl4(isStructDecl, isFuncArg)
 
 		-- TODO another validity check I stopped caring about
 		--assert(not var.type.funcArgs, {msg="can't define a function of a function, right?  It needs to be a function pointer, right?"})
-	
+
 		-- TODO should I even od this?  how about a unique new funcType node? same with arrayType, ptrType, constType, structType, enumType, etc ...
 		-- but what about unique type name registration and caching ...
 		subdecl = self:node('_funcType', subdecl, funcArgs)

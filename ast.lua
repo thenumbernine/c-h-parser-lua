@@ -248,18 +248,18 @@ function _fwdDecl:serialize(out)
 end
 
 local _enumType = nodeclass'enumType'
-function _enumType:init(name)
+function _enumType:init(name, fields)
 	self.name = name
-	self.enumFields = table()	-- filled out after ctor
+	self.fields = fields
 end
 function _enumType:serialize(out)
 	out'enum'
 	if self.name then out(self.name) end
-	if #self.enumFields > 0 then
+	if #self.fields > 0 then
 		out'{'
 		out'\n'
 		out.tabs = out.tabs + 1
-		for _,field in ipairs(self.enumFields) do
+		for _,field in ipairs(self.fields) do
 			out(('\t'):rep(out.tabs))
 			field:serialize(out)
 			out','
