@@ -44,11 +44,7 @@ don't track and cache ctype names.
 do track AST's of parenthesis.
 
 args:
-	name = it could be nameless for typedef'd or anonymous nested structs
-	anonymous = true for name == nil for nested anonymous structs/unions
-	fields = it will only exist for structs
-	isStruct = this is a struct/union.  if no fields then it's a fwd-declare.
-	isUnion = goes with isStruct for unions vs structs
+	name
 	baseType = for typedefs or for arrays
 	arrayCount = if the type is an array of another type
 	isPrimitive = if this is a primitive type
@@ -61,7 +57,6 @@ primitives: name isPrimitive size get set
 typedef: name baseType
 array: [name] baseType arrayCount
 pointer: baseType isPointer
-struct: [name] fields [isUnion]
 --]]
 function _ctype:init(args)
 	args = args or {}
@@ -83,21 +78,15 @@ function _ctype:init(args)
 				error("_ctype:init with baseType, isn't arrayCount, isn't isPointer, isn't isConst, isn't isVolatile ...")
 			end
 		else
-			self.anonymous = true
+			error'here'
 		end
 --DEBUG:print('...CType new name', self.name)
 	else
 --DEBUG:print('...CType already has name', self.name)
 	end
 	
-	self.fields = args.fields
-	self.funcArgs = args.funcArgs
-	self.isTypedef = args.isTypedef
-	self.isEnum = args.isEnum
 	self.isConst = args.isConst
 	self.isVolatile = args.isVolatile
-	self.isStruct = args.isStruct
-	self.isUnion = args.isUnion
 	self.baseType = args.baseType
 	self.arrayCount = args.arrayCount
 	self.isPrimitive = args.isPrimitive
@@ -105,73 +94,78 @@ function _ctype:init(args)
 end
 
 function _ctype:serialize(out, varname)
-	-- TODO should a ctype be a typedef?  nah?  esp with name being dif things
-	if self.isTypedef then
-		out'typedef'
-		self.baseType:serialize(out)
-		out(self.name)	-- .name is the typedef's name
-	elseif self.isStruct then
-		out(self.name or (
-			self.isUnion and 'union' or 'struct'
-		))
-		if self.fields then
-			out'{'
-			for _,field in ipairs(self.fields) do
-				field:serialize(out)
-			end
-			out'}'
-		end
-		if varname then
-			out(varname)
-		end
-	else -- if self.name then
---[[ use the stored name		
-		out(self.name)
---]]
--- [[ regenerate - same as in _ctype:init ... consoldate
-		-- if it's a pointer type ...
-		if self.baseType then
-			if self.arrayCount then
-				self.baseType:serialize(out, varname)
-				out'['
-				out(self.arrayCount)
-				out']'
-			elseif self.isPointer then
-				out(self.baseType.name)
-				out'*'
-				if varname then
-					out(varname)
-				end
-			elseif self.isConst then
-				out(self.baseType.name)
-				out'const'
-				if varname then
-					out(varname)
-				end
-			elseif self.isVolatile then
-				out(self.baseType.name)
-				out'volatile'
-				if varname then
-					out(varname)
-				end
-			else
-				error("_ctype:serialize this should match the :init's name determination: "..tostring(self.name))
-			end
-		else
-			out(self.name)	-- anonymous here?
+	-- if it's a pointer type ...
+	if self.baseType then
+		if self.arrayCount then
+			self.baseType:serialize(out, varname)
+			out'['
+			out(self.arrayCount)
+			out']'
+		elseif self.isPointer then
+			out(self.baseType.name)
+			out'*'
 			if varname then
 				out(varname)
 			end
-			if self.fields then
-				out'{'
-				for _,field in ipairs(self.fields) do
-					field:serialize(out)
-				end
-				out'}'
+		elseif self.isConst then
+			out(self.baseType.name)
+			out'const'
+			if varname then
+				out(varname)
 			end
---]]
+		elseif self.isVolatile then
+			out(self.baseType.name)
+			out'volatile'
+			if varname then
+				out(varname)
+			end
+		else
+			error("_ctype:serialize this should match the :init's name determination: "..tostring(self.name))
 		end
 	end
+end
+
+local _typedef = nodeclass'typedef'
+function _typedef:init(args)
+	self.name = args.name
+	self.baseType = args.baseType
+end
+function _typedef:serialize(out)
+	out'typedef'
+	self.baseType:serialize(out, self.name)
+end
+
+local _structType = nodeclass'structType'
+function _structType:init(args)
+	-- name is empty for anonymous struct/unions
+	self.name = args.name
+	self.isUnion = args.isUnion
+	-- fields is optional, empty means it is a fwd-declare struct (which can still be used in declarations of ptrs) 
+	self.fields = args.fields
+end
+function _structType:serialize(out, varname)
+	out(self.name or (
+		self.isUnion and 'union' or 'struct'
+	))
+	if self.fields then
+		out'{'
+		for _,field in ipairs(self.fields) do
+			field:serialize(out)
+		end
+		out'}'
+	end
+	if varname then
+		out(varname)
+	end
+end
+
+local _enumType = nodeclass'enumType'
+function _enumType:init(args)
+	self.name = args.name
+	self.baseType = args.baseType	-- always int32?
+	self.enumValues = table()	-- filled out after ctor
+end
+function _enumType:serialize(out)
 end
 
 -- this and symbol has a bit of overlap - this is typeless - symbol is valueless

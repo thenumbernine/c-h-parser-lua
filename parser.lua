@@ -294,8 +294,7 @@ function C_H_Parser:parseStmt()
 		-- insert all as typedefs
 		for _,decl in ipairs(decls) do
 			-- add typedefs
-			self.declTypes:insert(self:node('_ctype', {
-				isTypedef = true,
+			self.declTypes:insert(self:node('_typedef', {
 				baseType = decl.subdecl.type,
 				name = assert.index(decl.subdecl, 'name'),
 			}))
@@ -318,7 +317,7 @@ but if we get 'struct ${name} *declName1;' (notice ptr, because you can't do thi
 ... then it's symbol code ...
 ... but because it contains a new type in the name, it should still go in the type code.
 --]]
-				if ctype.isStruct
+				if self.ast._structType:isa(ctype)
 				and not ctype.fields
 				then
 					self.declTypes:insert(decl)
@@ -357,7 +356,7 @@ function C_H_Parser:parseDecls(quals, isStructDecl, isFuncArg)
 	-- hack here, if we're doing a stmt decl and our base type is a struct
 	-- and it's a struct without a body
 	-- names are optional - in that event it's a fwd-declare.
-	if startType.isStruct
+	if self.ast._structType:isa(startType)
 	--and self:canbe(';', 'symbol') -- don't consume it, leave it for the end of stmt
 	and self.t.token == ';'
 	then
@@ -421,23 +420,21 @@ function C_H_Parser:parseStartType()
 				fields:append(assert(decls))
 				self:mustbe(';', 'symbol')
 			end
-			return self:node('_ctype', {
+			return self:node('_structType', {
 				name = structName 
 					and (isUnion and 'union ' or 'struct '..structName) 
 					or nil,
-				fields = fields,
-				isStruct = true,
 				isUnion = isUnion,
+				fields = fields,
 			})
 		end
 		-- else ... better have a name
 		-- and then it's a forward-declaration of a struct, for the sake of other decl prototypes ...
 		-- ... TODO really just use self.tree anyways.
-		local ctype = self:node('_ctype', {
+		local ctype = self:node('_structType', {
 			name = structName
 				and (isUnion and 'union ' or 'struct '..structName) 
 				or nil,
-			isStruct = true,
 			isUnion = isUnion,
 			-- fwd-declare ...
 			-- but still legit here cuz it could be used for ptr-types in the same stmt.
@@ -451,12 +448,10 @@ function C_H_Parser:parseStartType()
 			-- TODO maybe not define the type here,
 			-- but instead return the enum name and enum values to whoever called this
 			-- and then based on 'typedef' or not, define the type versus look the type up.
-			ctype = self:node('_ctype', {
+			ctype = self:node('_enumType', {
 				name = enumName,
 				baseType = assert(self.builtinTypes.uint32_t),
-				isEnum = true,
 			})
-			ctype.enumValues = table()	-- TODO in ctor
 			fieldDest = ctype.enumValues
 		else
 			fieldDest = self.anonEnumValues
@@ -490,6 +485,7 @@ function C_H_Parser:parseStartType()
 			-- expect the type to exist
 		end
 	else
+		-- this is actually a legit typename
 		local typename = self:mustbe(nil, 'name')
 		return self:node('_ctype', {
 			name = typename,
@@ -503,6 +499,7 @@ If this is for a function-arg then it doesn't.
 --]]
 
 function C_H_Parser:parseSubDecl(startType, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseCPSubDecl', startType, isStructDecl, isFuncArg)
 	-- once we get our * then it and all subsequent *'s and const's only applies to this subdecl
 	if self:canbe('*', 'symbol') then
 		startType = self:getPtrType(startType)
@@ -522,6 +519,7 @@ function C_H_Parser:parseSubDecl(startType, isStructDecl, isFuncArg)
 end
 
 function C_H_Parser:parseSubDecl2(startType, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseCPSubDecl2', startType, isStructDecl, isFuncArg)
 
 	-- done with const's *'s and ()'s, move on to the name, array, function-args
 	local var = self:parseSubDecl3(startType, isFuncArg, isStructDecl)
@@ -570,6 +568,7 @@ function C_H_Parser:parseSubDecl2(startType, isStructDecl, isFuncArg)
 end
 
 function C_H_Parser:parseSubDecl3(startType, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseCPSubDecl3', startType, isStructDecl, isFuncArg)
 	local var = self:parseSubDecl4(startType, isStructDecl, isFuncArg)
 
 	-- TODO where to process arrays ...
@@ -594,6 +593,7 @@ assert(var.subdecl.type.name)
 end
 
 function C_H_Parser:parseSubDecl4(startType, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseCPSubDecl4', startType, isStructDecl, isFuncArg)
 	if self:canbe('(', 'symbol') then
 		-- What do ( ) around a decl name do? scare off macros?
 		-- TODO maybe I should wrap this in a _par AST node
@@ -612,6 +612,7 @@ function C_H_Parser:parseSubDecl4(startType, isStructDecl, isFuncArg)
 end
 
 function C_H_Parser:parseSubDecl5(startType, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseCPSubDecl5', startType, isStructDecl, isFuncArg)
 	local var = self:parseSubDecl6(startType, isStructDecl, isFuncArg)
 
 	if isStructDecl
@@ -625,7 +626,7 @@ function C_H_Parser:parseSubDecl5(startType, isStructDecl, isFuncArg)
 end
 
 function C_H_Parser:parseSubDecl6(startType, isStructDecl, isFuncArg)
---DEBUG:print('C_H_Parser:parseCPSubDecl', startType, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseCPSubDecl6', startType, isStructDecl, isFuncArg)
 --DEBUG:assert(startType)
 	-- I could make a separte rule or three for this but nah ... just if's for ( and )
 	
