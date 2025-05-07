@@ -186,10 +186,10 @@ end
 
 -- parser/base/parser calls this after setData
 function C_H_Parser:parseTree()
-	repeat
+	while self.t.token ~= nil do
 		self:parseStmt()
 		self:mustbe(';', 'symbol')
-	until not self.t.token
+	end
 end
 
 --[[

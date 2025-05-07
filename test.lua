@@ -4,15 +4,7 @@ local C_H_Parser = require 'c-h-parser.parser'
 local headers = C_H_Parser()
 
 assert(headers(
-[[	
-enum EnumName;
-enum EnumName2 { Foo };
-enum EnumName3 { Foo = 4 };
-const enum EnumName { Foo, } foo1, *foo2;
-]]	
---[[
 	require'ext.path''test.h':read()
---]]
 ))
 
 --[=[
