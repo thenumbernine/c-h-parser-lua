@@ -122,6 +122,9 @@ function _ctype:serialize(out, varname)
 		else
 			error("_ctype:serialize this should match the :init's name determination: "..tostring(self.name))
 		end
+	else
+		out(self.name)
+		if varname then out(varname) end
 	end
 end
 
