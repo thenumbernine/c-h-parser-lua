@@ -37,15 +37,9 @@ local function funcArgsToC(funcArgs)
 end
 
 local _ctype = nodeclass'ctype'
---[[
-args:
-	name
---]]
 function _ctype:init(args)
 	args = args or {}
 	self.name = args.name
---DEBUG:assert.index(self, 'name')
---DEBUG:assert(not self.baseType)
 end
 
 function _ctype:serialize(out, varname)
@@ -53,56 +47,90 @@ function _ctype:serialize(out, varname)
 	if varname then out(varname) end
 end
 
-local _ptrtype = nodeclass'ptrtype'
-function _ptrtype:init(args)
+local _ptrType = nodeclass'ptrType'
+function _ptrType:init(args)
 	self.baseType = args.baseType
 end
-function _ptrtype:serialize(out, varname)
+function _ptrType:serialize(out, varname)
 	self.baseType:serialize(out)
 	out'*'
 	if varname then out(varname) end
 end
 
-local _consttype = nodeclass'consttype'
-function _consttype:init(args)
+local _constType = nodeclass'constType'
+function _constType:init(args)
 	self.baseType = args.baseType
 end
-function _consttype:serialize(out, varname)
+function _constType:serialize(out, varname)
 	self.baseType:serialize(out)
 	out'const'
 	if varname then out(varname) end
 end
 
-local _volatiletype = nodeclass'volatiletype'
-function _volatiletype:init(args)
+local _volatileType = nodeclass'volatileType'
+function _volatileType:init(args)
 	self.baseType = args.baseType
 end
-function _volatiletype:serialize(out, varname)
+function _volatileType:serialize(out, varname)
 	self.baseType:serialize(out)
 	out'volatile'
 	if varname then out(varname) end
 end
 
-local _arraytype = nodeclass'arraytype'
-function _arraytype:init(args)
+local _arrayType = nodeclass'arrayType'
+function _arrayType:init(args)
 	self.baseType = args.baseType
 	self.arrayCount = args.arrayCount
 end
-function _arraytype:serialize(out, varname)
+function _arrayType:serialize(out, varname)
 	self.baseType:serialize(out, varname)
 	out'['
 	out(self.arrayCount)
 	out']'
 end
 
+-- qualifiers unique to statement
+-- don't include "const" and "volatile" because they are forwarded on to the first subdecl
+local stmtQuals = table{'static', 'extern', 'inline'}
+local function outputStmtQuals(qualSet, out)
+	if not qualSet then return end
+	for _,q in ipairs(stmtQuals) do
+		if qualSet[q] then
+			out(q)
+		end
+	end
+end
+
+
+--[[
+A 'decl' is going to be one statement / struct-field / func-arg which has:
+- a base-type , the lhs-most type of a C declaration, which comes with stmt-qualifiers like 'static', 'inline', 'extern', as well as type-qualifiers like 'const', 'volatile'
+- a table of .subdecls, which will be comma-separate sub-declarations, that each have their own unique sub-type and name (or no name for function-args or anonymous-struct-fields).
+--]]
+local _decl = nodeclass'decl'
+function _decl:init(baseType, subdecls, stmtQuals)
+	self.baseType = baseType
+	self.subdecls = subdecls
+	self.stmtQuals = stmtQuals
+end
+function _decl:serialize(out)
+	outputStmtQuals(self.stmtQuals, out)
+	self.baseType:serialize(out)
+	local sep
+	for _,subdecl in ipairs(self.subdecls) do
+		if sep then out(sep) end
+		subdecl:serialize(out)
+		sep = ','
+	end
+end
+
 local _typedef = nodeclass'typedef'
-function _typedef:init(args)
-	self.baseType = args.baseType	-- from type
-	self.name = args.name			-- to name
+function _typedef:init(decl)
+	self.decl = decl
 end
 function _typedef:serialize(out)
 	out'typedef'
-	self.baseType:serialize(out, self.name)
+	self.decl:serialize(out)
 end
 
 local _structType = nodeclass'structType'
@@ -152,20 +180,21 @@ function _subdecl:init(args)
 	end
 	self.type = assert.index(args, 'type')
 end
+-- TODO do subdecls have varnames ...?
 function _subdecl:serialize(out)
 	self.type:serialize(out, self.name)
 end
 
--- qualifiers unique to statement
--- don't include "const" and "volatile" because they are forwarded on to the first subdecl
-local stmtQuals = table{'static', 'extern', 'inline'}
-local function outputStmtQuals(qualSet, out)
-	if not qualSet then return end
-	for _,q in ipairs(stmtQuals) do
-		if qualSet[q] then
-			out(q)
-		end
-	end
+-- pars should be a form of subdecl that just wraps subdecls ...
+-- this is going to make subdecl a part of the ast serialization ...
+local _partype = nodeclass'partype'
+function _partype:init(arg)
+	self[1] = arg
+	-- because i'm lazy
+	self.subdecl = arg.subdecl
+end
+function _partype:serialize(out, varname)
+	self[1]:serialize(out, '('..(varname or '')..')')
 end
 
 -- subdecl of a variable or a function
@@ -173,10 +202,8 @@ end
 local _var = nodeclass'var'
 function _var:init(args)
 	self.subdecl = assert.index(args, 'subdecl')
-	--.stmtQuals can be added later
 end
 function _var:serialize(out)
-	outputStmtQuals(self.stmtQuals, out)
 	self.subdecl:serialize(out)
 end
 
@@ -223,6 +250,5 @@ function _enumdef:serialize(out)
 	out'='
 	out(self.value)
 end
-
 
 return ast

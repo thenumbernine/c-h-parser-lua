@@ -61,25 +61,25 @@ local C_H_Parser = Parser:subclass()
 C_H_Parser.ast = require 'c-h-parser.ast'
 
 function C_H_Parser:getPtrType(baseType)
-	return self:node('_ptrtype', {
+	return self:node('_ptrType', {
 		baseType = baseType,
 	})
 end
 
 function C_H_Parser:getConstType(baseType)
-	return self:node('_consttype', {
+	return self:node('_constType', {
 		baseType = baseType,
 	})
 end
 
 function C_H_Parser:getVolatileType(baseType)
-	return self:node('_volatiletype', {
+	return self:node('_volatileType', {
 		baseType = baseType,
 	})
 end
 
 function C_H_Parser:getArrayType(baseType, arrayCount)
-	return self:node('_arraytype', {
+	return self:node('_arrayType', {
 		baseType = baseType,
 		arrayCount = arrayCount,
 	})
@@ -285,25 +285,18 @@ function C_H_Parser:parseStmt()
 
 --DEBUG:print('pre-decl qualifiers:', require'ext.tolua'(stmtQuals))
 
-	local decls, ctype = self:parseDecls(stmtQuals, false, false)	-- false == not a struct, false == not a function-arg
+	local decl = self:parseDecl(stmtQuals, false, false)	-- false == not a struct, false == not a function-arg
 
-	if isTypedef then
-		-- insert all as typedefs
-		for _,decl in ipairs(decls) do
-			-- add typedefs
-			self.declTypes:insert(self:node('_typedef', {
-				baseType = decl.subdecl.type,
-				name = assert.index(decl.subdecl, 'name'),
-			}))
-		end
+	if self.ast._fwdDeclStruct:isa(decl) then
+		self.declTypes:insert(decl)
+	elseif isTypedef then
+		-- typedef struct name; is invalid, so this should have subdecls after it ...
+		self.declTypes:insert(self:node('_typedef', decl))
 	else
 		-- insert all as decls
 		-- here ... add to subdecl in-order list
 		-- TODO track names: insert 'func' by name? what about anonymous funcs?
-		for _,decl in ipairs(decls) do
-			if self.ast._fwdDeclStruct:isa(decl) then
-				self.declTypes:insert(decl)
-			else
+		for _,subdecl in ipairs(decl.subdecls) do
 --[[
 NOTICE this is very structly ffi-binding specific.
 (maybe I should put tehse declarations into their own list? type+fwddecl's ...
@@ -314,13 +307,14 @@ but if we get 'struct ${name} *declName1;' (notice ptr, because you can't do thi
 ... then it's symbol code ...
 ... but because it contains a new type in the name, it should still go in the type code.
 --]]
-				if self.ast._structType:isa(ctype)
-				and not ctype.fields
-				then
-					self.declTypes:insert(decl)
-				else
-					self.symbolsInOrder:insert(decl)
-				end
+			-- TODO FIXME
+			local ctype = subdecl.subdecl.baseType
+			if self.ast._structType:isa(ctype)
+			and not ctype.fields
+			then
+				self.declTypes:insert(subdecl)
+			else
+				self.symbolsInOrder:insert(subdecl)
 			end
 		end
 	end
@@ -333,8 +327,8 @@ then parse added quals
 	- if it's a stmt then parse stmt-quals (and append to the qual list given, if there)
 	- if it's a struct then parse struct-decls , which is just 'const'
 --]]
-function C_H_Parser:parseDecls(quals, isStructDecl, isFuncArg)
---DEBUG:print('C_H_Parser:parseDecls', quals, isStructDecl, isFuncArg)
+function C_H_Parser:parseDecl(quals, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseDecl', quals, isStructDecl, isFuncArg)
 	-- parse the start of the type
 	-- notice that stmt quals can still come after the name, so long as they are before the comma
 	-- in fact, of all stmt-qualifiers, it seems the subsequent types of the decls only cares about 'const'
@@ -357,10 +351,14 @@ function C_H_Parser:parseDecls(quals, isStructDecl, isFuncArg)
 	--and self:canbe(';', 'symbol') -- don't consume it, leave it for the end of stmt
 	and self.t.token == ';'
 	then
+		-- NOTICE if we do `const struct {};` that's an error
+		-- so here we should assert there's no CV qualifiers if it's a plain `struct {...};` declaration
+		assert.eq(next(quals), nil, {msg="if you just have a struct definition without variables, it can't have qualifiers"})
+
 		local fwdDecl = self:node('_fwdDeclStruct', {
 			type = startType,
 		})
-		return {fwdDecl}
+		return fwdDecl
 	end
 
 	-- See if we're using a const type -- that reflects on every subsequent field
@@ -375,28 +373,36 @@ function C_H_Parser:parseDecls(quals, isStructDecl, isFuncArg)
 	-- always decl here?
 	-- yes?
 
-	local decls = table()
-	repeat
-		local decl = self:parseSubDecl(startType, isStructDecl, isFuncArg)
---DEBUG:assert(decl)
-		decls:insert(decl)
+	-- ok rather than passing in startType
+	-- lets make an AST
+	-- so lets collect back decls
+	-- and save them inside startType
+	-- so it can generate them with its serialization
 
-		-- if it's not a structDecl or a funcArg then this is a stmt decl
-		--  so save the stmt-qualifiers
-		if not (isStructDecl or isFuncArg) then
-			decl.stmtQuals = quals
-		end
+	local subdecls = table()
+	repeat
+		local subdecl = self:parseSubDecl(startType, isStructDecl, isFuncArg)
+--DEBUG:assert(subdecl)
+		subdecls:insert(subdecl)
 
 		-- if isFuncArg then don't handle multiple names after the type
 		if isFuncArg then break end
 	until not self:canbe(',', 'symbol')
-	return decls, startType
+	
+	-- in fact, maybe at this point I should be returning a unique node of the two together
+	-- just like I do with fwdDeclStruct
+	return self:node('_decl', startType, subdecls, 
+
+		-- if it's not a structDecl or a funcArg then this is a stmt subdecl
+		--  so save the stmt-qualifiers
+		quals)
 end
 
 function C_H_Parser:parseCVQuals()
 	return self:parseQualifiers{'const', 'volatile'}
 end
 
+-- This is the start of a declaration, before the *cv-specific comma-separated stuff to the right
 function C_H_Parser:parseStartType()
 	if self:canbe('struct', 'keyword')
 	or self:canbe('union', 'keyword')
@@ -413,7 +419,7 @@ function C_H_Parser:parseStartType()
 				local quals = self:parseCVQuals()
 				-- 2nd 'true' means struct-decls, means only look for 'const' qualifier and not the rest (volatile extern etc)
 				-- 3rd 'false' means not a function-arg.  function-args can only have one name after the startType, not multiple.
-				local decls = self:parseDecls(quals, true, false)
+				local decls = self:parseDecl(quals, true, false)
 				fields:append(assert(decls))
 				self:mustbe(';', 'symbol')
 			end
@@ -490,79 +496,27 @@ end
 If this is for a stmt-decl or a struct-decl then it gives a warning without a name
 If this is for a function-arg then it doesn't.
 --]]
-
-function C_H_Parser:parseSubDecl(startType, isStructDecl, isFuncArg)
---DEBUG:print('C_H_Parser:parseSubDecl', startType, isStructDecl, isFuncArg)
+function C_H_Parser:parseSubDecl(ctype, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseSubDecl', ctype, isStructDecl, isFuncArg)
 	-- once we get our * then it and all subsequent *'s and const's only applies to this subdecl
 	if self:canbe('*', 'symbol') then
-		startType = self:getPtrType(startType)
+		ctype = self:getPtrType(ctype)
 		local quals = self:parseCVQuals()
 		-- const or volatile has to always follow a *, or be on the startType
 		if quals.const then
-			startType = self:getConstType(startType)
+			ctype = self:getConstType(ctype)
 		end
 		if quals.volatile then
-			startType = self:getVolatileType(startType)
+			ctype = self:getVolatileType(ctype)
 		end
 	end
 
-	local var = self:parseSubDecl2(startType, isStructDecl, isFuncArg)
---DEBUG:assert(var)
-	return var
+	return self:parseSubDecl2(ctype, isStructDecl, isFuncArg)
 end
 
-function C_H_Parser:parseSubDecl2(startType, isStructDecl, isFuncArg)
---DEBUG:print('C_H_Parser:parseSubDecl2', startType, isStructDecl, isFuncArg)
-
-	-- done with const's *'s and ()'s, move on to the name, array, function-args
-	local var = self:parseSubDecl3(startType, isFuncArg, isStructDecl)
-
-	-- Function args can go here for now, until I figure out where they belong.
-	-- ... but how to tell function-args from parenthesis?
-	if self:canbe('(', 'symbol') then
-		-- if we're not parsing a func-arg then we'll want our var to have a name
-		-- becuase functions all need names.
-		if not isFuncArg then
-			assert(var.subdecl.name, {msg="function needs a name"})
-		end
-
-		local funcArgs = table()
-		local first = true
-		while not self:canbe(')', 'symbol') do
-			if not first then
-				self:mustbe(',', 'symbol')
-			end
-			first = false
-
-			-- funcArg:
-			local quals = self:parseCVQuals()	-- see if there's a leading 'const'
-			-- arg 2 true = struct-type = only look for 'const' right of the type, not 'volatile', 'static', 'inline'.
-			-- arg 3 false = function-arg = only allow one name (and with an optional name at that), not multiple `int a,b,c`'s
-			local subargs = self:parseDecls(quals, true, true)
-			funcArgs:append(subargs)
-		end
-
-		assert(not var.type.funcArgs, {msg="can't define a function of a function, right?  It needs to be a function pointer, right?"})
-		-- TODO should I even od this?  how about a unique new funcType node? same with arrayType, ptrType, constType, structType, enumType, etc ...
-		-- but what about unique type name registration and caching ...
-		var.subdecl.type = self:node('_funcType', {
-			baseType = var.subdecl.type,	-- return type
-			funcArgs = funcArgs,		-- arg list
-		})
-
-		-- so func and var are the same?
-		-- except that func can't return an array or something?
-		return self:node('_var', {
-			subdecl = var.subdecl,
-		})
-	end
-
-	return var
-end
-
-function C_H_Parser:parseSubDecl3(startType, isStructDecl, isFuncArg)
---DEBUG:print('C_H_Parser:parseSubDecl3', startType, isStructDecl, isFuncArg)
-	local var = self:parseSubDecl4(startType, isStructDecl, isFuncArg)
+function C_H_Parser:parseSubDecl2(ctype, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseSubDecl2', ctype, isStructDecl, isFuncArg)
+	local var = self:parseSubDecl3(ctype, isStructDecl, isFuncArg)
 
 	-- while-loop for multiple x[1][1][1]... ... can anything go between array decls?
 	while self:canbe('[', 'symbol') do
@@ -581,29 +535,12 @@ function C_H_Parser:parseSubDecl3(startType, isStructDecl, isFuncArg)
 	return var
 end
 
-function C_H_Parser:parseSubDecl4(startType, isStructDecl, isFuncArg)
---DEBUG:print('C_H_Parser:parseSubDecl4', startType, isStructDecl, isFuncArg)
-	if self:canbe('(', 'symbol') then
-		-- What do ( ) around a decl name do? scare off macros?
-		-- TODO maybe I should wrap this in a _par AST node
-		--  since for arrays we're going to complain if it's on any AST node other than the inner-most non-parenthsis AST node.
-		local var = self:parseSubDecl5(startType, isStructDecl, isFuncArg)
---DEBUG:assert(var)
-		self:mustbe(')', 'symbol')
-		-- TODO _parenthesis-wrapping node?
-		-- especially for making sure that function declarations only have arrays on the inner-most parentehsis?
-		return var
-	else
-		local var = self:parseSubDecl5(startType, isStructDecl, isFuncArg)
---DEBUG:assert(var)
-		return var
-	end
-end
+function C_H_Parser:parseSubDecl3(ctype, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseSubDecl3', ctype, isStructDecl, isFuncArg)
+	local var = self:parseSubDecl4(ctype, isStructDecl, isFuncArg)
 
-function C_H_Parser:parseSubDecl5(startType, isStructDecl, isFuncArg)
---DEBUG:print('C_H_Parser:parseSubDecl5', startType, isStructDecl, isFuncArg)
-	local var = self:parseSubDecl6(startType, isStructDecl, isFuncArg)
-
+	-- TODO instead of modifying the underlying type
+	-- how about just wrapping it in an AST node?
 	if isStructDecl
 	and self:canbe(':', 'symbol')
 	then
@@ -614,11 +551,10 @@ function C_H_Parser:parseSubDecl5(startType, isStructDecl, isFuncArg)
 	return var
 end
 
-function C_H_Parser:parseSubDecl6(startType, isStructDecl, isFuncArg)
---DEBUG:print('C_H_Parser:parseSubDecl6', startType, isStructDecl, isFuncArg)
---DEBUG:assert(startType)
+function C_H_Parser:parseSubDecl4(ctype, isStructDecl, isFuncArg)
+--DEBUG:print('C_H_Parser:parseSubDecl4', ctype, isStructDecl, isFuncArg)
+--DEBUG:assert(ctype)
 
-	local name = self:canbe(nil, 'name')
 
 	--[[
 	if name is optional (i.e. for func args)
@@ -631,8 +567,12 @@ function C_H_Parser:parseSubDecl6(startType, isStructDecl, isFuncArg)
 	- optional for function-args
 	--]]
 
+	local ret
+
+	-- try for name
 	-- if not isFuncArg then must be name, but here it might be another subexpression so ...
 	-- TODO my recursion order is messed up I'm sure
+	local name = self:canbe(nil, 'name')
 	if name
 	--or isFuncArg	-- TODO this is going to be a problem
 	then
@@ -640,15 +580,79 @@ function C_H_Parser:parseSubDecl6(startType, isStructDecl, isFuncArg)
 			isFuncArg = isFuncArg,
 			isStructDecl = isStructDecl,
 			name = name,
-			type = startType,
+			type = ctype,
 		})
 
-		return self:node('_var', {
+		ret = self:node('_var', {
 			subdecl = subdecl,
+		})
+	else
+		-- try for parenthesis-wrapping
+		if self:canbe('(', 'symbol') then
+			-- What do ( ) around a decl name do? scare off macros?
+			-- TODO maybe I should wrap this in a _partype AST node
+			--  since for arrays we're going to complain if it's on any AST node other than the inner-most non-parenthsis AST node.
+			local var = self:parseSubDecl(ctype, isStructDecl, isFuncArg)
+--DEBUG:assert(var)
+			self:mustbe(')', 'symbol')
+			-- partype should go around the name and any internal function-args ...
+			return self:node('_partype', var)
+		end
+
+		-- and after name or parenthesis
+		--  try for function-arguments
+
+		error{msg='too much'}
+	end
+
+	-- Function args can go here for now, until I figure out where they belong.
+	-- ... but how to tell function-args from parenthesis?
+	if self:canbe('(', 'symbol') then
+		
+		-- at this point if ret is a _partype / subdecl
+		-- then it's gotta be a nameless subdecl (right?)
+		assert(ret)
+		if not self.ast._var:isa(ret) then
+		end
+
+		-- if we're not parsing a func-arg then we'll want our var to have a name
+		-- becuase functions all need names.
+		if not isFuncArg then
+			assert(var.subdecl.name, {msg="function needs a name"})
+		end
+
+		local funcArgs = table()
+		local first = true
+		while not self:canbe(')', 'symbol') do
+			if not first then
+				self:mustbe(',', 'symbol')
+			end
+			first = false
+
+			-- funcArg:
+			local quals = self:parseCVQuals()	-- see if there's a leading 'const'
+			-- arg 2 true = struct-type = only look for 'const' right of the type, not 'volatile', 'static', 'inline'.
+			-- arg 3 false = function-arg = only allow one name (and with an optional name at that), not multiple `int a,b,c`'s
+			local subargs = self:parseDecl(quals, true, true)
+			funcArgs:append(subargs)
+		end
+
+		assert(not var.type.funcArgs, {msg="can't define a function of a function, right?  It needs to be a function pointer, right?"})
+		-- TODO should I even od this?  how about a unique new funcType node? same with arrayType, ptrType, constType, structType, enumType, etc ...
+		-- but what about unique type name registration and caching ...
+		var.subdecl.type = self:node('_funcType', {
+			baseType = var.subdecl.type,	-- return type
+			funcArgs = funcArgs,		-- arg list
+		})
+
+		-- so func and var are the same?
+		-- except that func can't return an array or something?
+		return self:node('_var', {
+			subdecl = var.subdecl,
 		})
 	end
 
-	return self:parseSubDecl(startType, isStructDecl, isFuncArg)
+	return ret
 end
 
 return C_H_Parser

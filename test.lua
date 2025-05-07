@@ -29,6 +29,7 @@ struct {} anonStructVar;
 struct namedStructWith {} namedStructVar;
 
 int (ipar);
+/*
 int ((ipar2));
 
 int if1();
@@ -39,9 +40,17 @@ int if1ari[20](int d);
 int (*if1arip[20])(int d);
 
 struct memberFuncPtrStruct {
-	int (*c)();			// TODO
-	int (*c[20])(int d);	// TODO
+	int (*c)();	
+	int (*c[20])(int d);
 };
+
+typedef struct {
+	//int (*c)(int d)[20];	//function cannot return an array
+	int (*c[20])(int d);	// does that make this an array of fptrs?
+	int d;
+} (*fp)(int x, float y[20]);
+
+*/
 
 ]])
 
