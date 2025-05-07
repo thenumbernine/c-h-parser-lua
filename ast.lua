@@ -38,94 +38,69 @@ end
 
 local _ctype = nodeclass'ctype'
 --[[
-TODO get rid of all of this.
-use subclasses
-don't track and cache ctype names.
-do track AST's of parenthesis.
-
 args:
 	name
-	baseType = for typedefs or for arrays
-	arrayCount = if the type is an array of another type
-	isPrimitive = if this is a primitive type
-	isPointer = is a pointer of the base type
-	isConst
-	isVolatile
-
-usage: (TODO subclasses?)
-primitives: name isPrimitive size get set
-typedef: name baseType
-array: [name] baseType arrayCount
-pointer: baseType isPointer
 --]]
 function _ctype:init(args)
 	args = args or {}
 	self.name = args.name
-	if not self.name then
-		-- if it's a pointer type ...
-		if args.baseType then
-			if args.arrayCount then
-				self.name = args.baseType.name..'['..args.arrayCount..']'
-			elseif args.isPointer then
-				self.name = args.baseType.name..'*'
-			elseif args.isConst then
-				-- TODO don't use isConst and isPointer in the same ctype?
-				-- or names might get mixed up or something? idk
-				self.name = args.baseType.name..' const'
-			elseif args.isVolatile then
-				self.name = args.baseType.name..' volatile'
-			else
-				error("_ctype:init with baseType, isn't arrayCount, isn't isPointer, isn't isConst, isn't isVolatile ...")
-			end
-		else
-			error'here'
-		end
---DEBUG:print('...CType new name', self.name)
-	else
---DEBUG:print('...CType already has name', self.name)
-	end
-	
-	self.isConst = args.isConst
-	self.isVolatile = args.isVolatile
-	self.baseType = args.baseType
-	self.arrayCount = args.arrayCount
-	self.isPrimitive = args.isPrimitive
-	self.isPointer = args.isPointer
+--DEBUG:assert.index(self, 'name')
+--DEBUG:assert(not self.baseType)
 end
 
 function _ctype:serialize(out, varname)
-	-- if it's a pointer type ...
-	if self.baseType then
-		if self.arrayCount then
-			self.baseType:serialize(out, varname)
-			out'['
-			out(self.arrayCount)
-			out']'
-		elseif self.isPointer then
-			out(self.baseType.name)
-			out'*'
-			if varname then
-				out(varname)
-			end
-		elseif self.isConst then
-			out(self.baseType.name)
-			out'const'
-			if varname then
-				out(varname)
-			end
-		elseif self.isVolatile then
-			out(self.baseType.name)
-			out'volatile'
-			if varname then
-				out(varname)
-			end
-		else
-			error("_ctype:serialize this should match the :init's name determination: "..tostring(self.name))
-		end
-	else
-		out(self.name)
-		if varname then out(varname) end
-	end
+	out(self.name)
+	if varname then out(varname) end
+end
+
+local _ptrtype = nodeclass'ptrtype'
+function _ptrtype:init(args)
+	self.baseType = args.baseType
+	-- TODO get rid of .name
+	self.name = args.baseType.name..'*'
+end
+function _ptrtype:serialize(out, varname)
+	self.baseType:serialize(out)
+	out'*'
+	if varname then out(varname) end
+end
+
+local _consttype = nodeclass'consttype'
+function _consttype:init(args)
+	self.baseType = args.baseType
+	-- TODO get rid of .name
+	self.name = args.baseType.name..' const'
+end
+function _consttype:serialize(out, varname)
+	self.baseType:serialize(out)
+	out'const'
+	if varname then out(varname) end
+end
+
+local _volatiletype = nodeclass'volatiletype'
+function _volatiletype:init(args)
+	self.baseType = args.baseType
+	-- TODO get rid of .name
+	self.name = args.baseType.name..' volatile'
+end
+function _volatiletype:serialize(out, varname)
+	self.baseType:serialize(out)
+	out'volatile'
+	if varname then out(varname) end
+end
+
+local _arraytype = nodeclass'arraytype'
+function _arraytype:init(args)
+	self.baseType = args.baseType
+	self.arrayCount = args.arrayCount
+	-- TODO get rid of .name
+	self.name = args.baseType.name..'['..args.arrayCount..']'
+end
+function _arraytype:serialize(out)
+	self.baseType:serialize(out, varname)
+	out'['
+	out(self.arrayCount)
+	out']'
 end
 
 local _typedef = nodeclass'typedef'

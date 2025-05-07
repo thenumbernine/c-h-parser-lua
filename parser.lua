@@ -61,28 +61,25 @@ local C_H_Parser = Parser:subclass()
 C_H_Parser.ast = require 'c-h-parser.ast'
 
 function C_H_Parser:getPtrType(baseType)
-	return self:node('_ctype', {
+	return self:node('_ptrtype', {
 		baseType = baseType,
-		isPointer = true,
 	})
 end
 
 function C_H_Parser:getConstType(baseType)
-	return self:node('_ctype', {
+	return self:node('_consttype', {
 		baseType = baseType,
-		isConst = true,
 	})
 end
 
 function C_H_Parser:getVolatileType(baseType)
-	return self:node('_ctype', {
+	return self:node('_volatiletype', {
 		baseType = baseType,
-		isVolatile = true,
 	})
 end
 
 function C_H_Parser:getArrayType(baseType, arrayCount)
-	return self:node('_ctype', {
+	return self:node('_arraytype', {
 		baseType = baseType,
 		arrayCount = arrayCount,
 	})
@@ -172,7 +169,7 @@ size_t
 ssize_t
 ptrdiff_t
 ]], '\n')) do
-		self.builtinTypes[name] = self:node('_ctype', {name=name, isPrimitive=true, parser=self})
+		self.builtinTypes[name] = self:node('_ctype', {name=name})
 	end
 
 	if args then
