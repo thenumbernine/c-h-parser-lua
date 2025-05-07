@@ -556,25 +556,8 @@ end
 If this is for a stmt-decl or a struct-decl then it gives a warning without a name
 If this is for a function-arg then it doesn't.
 --]]
-function C_H_Parser:parseSubDecl(startType, isStructDecl, isFuncArg)
-	if self:canbe('(', 'symbol') then
-		-- What do ( ) around a decl name do? scare off macros?
-		-- TODO maybe I should wrap this in a _par AST node
-		--  since for arrays we're going to complain if it's on any AST node other than the inner-most non-parenthsis AST node.
-		local subdecl = self:parseSubDecl2(startType, isStructDecl, isFuncArg)
---DEBUG:assert(subdecl)		
-		self:mustbe(')', 'symbol')
-		-- TODO _parenthesis-wrapping node?
-		-- especially for making sure that function declarations only have arrays on the inner-most parentehsis?
-		return subdecl
-	else
-		local subdecl = self:parseSubDecl2(startType, isStructDecl, isFuncArg)
---DEBUG:assert(subdecl)		
-		return subdecl
-	end
-end
 
-function C_H_Parser:parseSubDecl2(startType, isStructDecl, isFuncArg)
+function C_H_Parser:parseSubDecl(startType, isStructDecl, isFuncArg)
 	-- once we get our * then it and all subsequent *'s and const's only applies to this subdecl
 	if self:canbe('*', 'symbol') then
 		startType = self:getPtrType(startType)
@@ -588,15 +571,15 @@ function C_H_Parser:parseSubDecl2(startType, isStructDecl, isFuncArg)
 		end
 	end
 	
-	local subdecl = self:parseSubDecl3(startType, isStructDecl, isFuncArg)
+	local subdecl = self:parseSubDecl2(startType, isStructDecl, isFuncArg)
 --DEBUG:assert(subdecl)
 	return subdecl
 end
 
-function C_H_Parser:parseSubDecl3(startType, isStructDecl, isFuncArg)
+function C_H_Parser:parseSubDecl2(startType, isStructDecl, isFuncArg)
 
 	-- done with const's *'s and ()'s, move on to the name, array, function-args
-	local var = self:parseSubDecl4(startType, isFuncArg, isStructDecl)
+	local var = self:parseSubDecl3(startType, isFuncArg, isStructDecl)
 
 	-- Function args can go here for now, until I figure out where they belong.
 	-- ... but how to tell function-args from parenthesis?
@@ -614,8 +597,13 @@ function C_H_Parser:parseSubDecl3(startType, isStructDecl, isFuncArg)
 				self:mustbe(',', 'symbol')
 			end
 			first = false
-
-			funcArgs:insert(self:parseFuncArg())
+		
+			-- funcArg:
+			local quals = self:parseCVQuals()	-- see if there's a leading 'const'
+			-- arg 2 true = struct-type = only look for 'const' right of the type, not 'volatile', 'static', 'inline'.
+			-- arg 3 false = function-arg = only allow one name (and with an optional name at that), not multiple `int a,b,c`'s
+			local funcArg = self:parseDecls(quals, true, true)
+			funcArgs:insert(funcArg)
 		end
 
 		assert(not var.type.funcArgs, {msg="can't define a function of a function, right?  It needs to be a function pointer, right?"})
@@ -638,12 +626,22 @@ function C_H_Parser:parseSubDecl3(startType, isStructDecl, isFuncArg)
 	return var
 end
 
-function C_H_Parser:parseFuncArg()
-	-- funcArg:
-	local quals = self:parseCVQuals()	-- see if there's a leading 'const'
-	-- arg 2 true = struct-type = only look for 'const' right of the type, not 'volatile', 'static', 'inline'.
-	-- arg 3 false = function-arg = only allow one name (and with an optional name at that), not multiple `int a,b,c`'s
-	return self:parseDecls(quals, true, true)
+function C_H_Parser:parseSubDecl3(startType, isStructDecl, isFuncArg)
+	if self:canbe('(', 'symbol') then
+		-- What do ( ) around a decl name do? scare off macros?
+		-- TODO maybe I should wrap this in a _par AST node
+		--  since for arrays we're going to complain if it's on any AST node other than the inner-most non-parenthsis AST node.
+		local subdecl = self:parseSubDecl4(startType, isStructDecl, isFuncArg)
+--DEBUG:assert(subdecl)		
+		self:mustbe(')', 'symbol')
+		-- TODO _parenthesis-wrapping node?
+		-- especially for making sure that function declarations only have arrays on the inner-most parentehsis?
+		return subdecl
+	else
+		local subdecl = self:parseSubDecl4(startType, isStructDecl, isFuncArg)
+--DEBUG:assert(subdecl)		
+		return subdecl
+	end
 end
 
 function C_H_Parser:parseSubDecl4(startType, isStructDecl, isFuncArg)
