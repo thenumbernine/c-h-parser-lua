@@ -11,10 +11,44 @@ ast.node = AST
 function AST:toC()
 	local s = ''
 	local sep = ''
-	self:serialize(function(x)
-		s = s .. sep .. tostring(x)
-		sep = ' '
-	end)
+	
+	local dontSpace = {
+		['\t'] = true,
+		['\n'] = true,
+		[';'] = true,
+		['('] = true,
+		[')'] = true,
+		['['] = true,
+		[']'] = true,
+		['{'] = true,
+		['}'] = true,
+		[','] = true,
+		['*'] = true,
+	}
+	
+	local out = setmetatable({}, {
+		__call = function(out, x)
+			local lastChar = s:sub(-1)
+			if x == '\n' then
+				s = s .. tostring(x)
+			elseif lastChar == '(' and x == '*' then	-- no space between (*
+				s = s .. tostring(x)
+			elseif lastChar == '}' and x == ';' then	-- no space for };
+				s = s .. tostring(x)
+			elseif x == '*' or x == '{' then			-- put only space before these
+				s = s .. sep .. tostring(x)
+			elseif lastChar == '}' or lastChar == ',' then		-- space after only
+				s = s .. sep .. tostring(x)
+			elseif dontSpace[x] or dontSpace[lastChar] then
+				s = s .. tostring(x)	-- no sep
+			else
+				s = s .. sep .. tostring(x)
+			end
+			sep = ' '
+		end,
+	})
+	out.tabs = 0
+	self:serialize(out)
 	return s
 end
 
@@ -126,6 +160,14 @@ function _decl:serialize(out)
 	end
 end
 
+local _var = nodeclass'var'
+function _var:init(name)
+	self[1] = name
+end
+function _var:serialize(out)
+	out(self[1])
+end
+
 local _typedef = nodeclass'typedef'
 function _typedef:init(decl)
 	self[1] = decl
@@ -150,11 +192,15 @@ function _structType:serialize(out)
 		out'{'
 		if #self.fields > 0 then
 			out'\n'
+			out.tabs = out.tabs + 1
 			for _,field in ipairs(self.fields) do
+				out(('\t'):rep(out.tabs))
 				field:serialize(out)
 				out';'
-			out'\n'
+				out'\n'
 			end
+			out.tabs = out.tabs - 1
+			out(('\t'):rep(out.tabs))
 		end
 		out'}'
 	end
@@ -211,10 +257,16 @@ function _enumType:serialize(out)
 	if self.name then out(self.name) end
 	if #self.enumFields > 0 then
 		out'{'
+		out'\n'
+		out.tabs = out.tabs + 1
 		for _,field in ipairs(self.enumFields) do
+			out(('\t'):rep(out.tabs))
 			field:serialize(out)
 			out','
+			out'\n'
 		end
+		out.tabs = out.tabs - 1
+		out(('\t'):rep(out.tabs))
 		out'}'
 	end
 end

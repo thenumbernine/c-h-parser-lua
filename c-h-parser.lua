@@ -453,13 +453,13 @@ function C_H_Parser:parseSubDecl(isStructDecl, isFuncArg)
 		local subdecl = self:parseSubDecl(isStructDecl, isFuncArg)
 		
 		-- wrap the rest in our ptr() and either const() or volateil()
-		subdecl = self:node('_ptr', subdecl)
 		if quals.const then
 			subdecl = self:node('_const', subdecl)
 		end
 		if quals.volatile then
 			subdecl = self:node('_volatile', subdecl)
 		end
+		subdecl = self:node('_ptr', subdecl)
 		return subdecl
 	else
 		return self:parseSubDecl2(isStructDecl, isFuncArg)
@@ -524,7 +524,7 @@ function C_H_Parser:parseSubDecl4(isStructDecl, isFuncArg)
 	--or isFuncArg	-- TODO this is going to be a problem
 	then
 		-- technically these aren't ctypes, they are symbol/variable/function/field names
-		subdecl = self:node('_ctype', name)
+		subdecl = self:node('_var', name)
 	else
 		-- try for parenthesis-wrapping
 		if self:canbe('(', 'symbol') then
@@ -548,7 +548,7 @@ function C_H_Parser:parseSubDecl4(isStructDecl, isFuncArg)
 			end
 		
 			-- technically these aren't ctypes, they are symbol/variable/function/field names
-			subdecl = self:node('_ctype', '')
+			subdecl = self:node('_var', '')
 		end
 	end
 
