@@ -263,8 +263,17 @@ function C_H_Parser:parseStmt()
 	local decl = self:parseDecl(stmtQuals, false, false)	-- false == not a struct, false == not a function-arg
 --DEBUG:assert(decl)
 
-	if self.ast._fwdDeclStruct:isa(decl) then
-		self.declTypes:insert(decl)
+	if self.ast._fwdDecl:isa(decl) then
+
+		if self.ast._enumType:isa(decl[1])
+		and not decl[1].name
+		then
+			-- nameless enum without decls?
+			-- put all its fields in the global list
+			self.anonEnumValues:append(assert(decl[1].enumFields))
+		else
+			self.declTypes:insert(decl)
+		end	
 	elseif isTypedef then
 		-- typedef struct name; is invalid, so this should have subdecls after it ...
 		self.declTypes:insert(self:node('_typedef', decl))
@@ -276,6 +285,7 @@ function C_H_Parser:parseStmt()
 		do
 			lhsType = lhsType[1]
 		end
+	
 		if self.ast._structType:isa(lhsType)
 		or self.ast._enumType:isa(lhsType)
 		then
@@ -310,6 +320,7 @@ function C_H_Parser:parseDecl(quals, isStructDecl, isFuncArg)
 		self:parseStmtQuals(quals)
 	end
 
+
 	-- hack here, if we're doing a stmt decl and our base type is a struct
 	-- and it's a struct without a body
 	-- names are optional - in that event it's a fwd-declare.
@@ -325,9 +336,7 @@ function C_H_Parser:parseDecl(quals, isStructDecl, isFuncArg)
 		assert.eq(next(quals), nil, {msg="if you just have a struct definition without variables, it can't have qualifiers"})
 
 		-- TODO not necessary? Just check for a struct-decl that has no subdecls (and no name?)
-		local fwdDecl = self:node('_fwdDeclStruct', startType)
---DEBUG:assert(fwdDecl.serialize)		
-		return fwdDecl
+		return self:node('_fwdDecl', startType)
 	end
 
 	-- See if we're using a const type -- that reflects on every subsequent field
@@ -352,7 +361,6 @@ function C_H_Parser:parseDecl(quals, isStructDecl, isFuncArg)
 	repeat
 		local subdecl = self:parseSubDecl(isStructDecl, isFuncArg)
 --DEBUG:assert(subdecl)
---DEBUG:assert(subdecl.serialize)
 		subdecls:insert(subdecl)
 
 		-- if isFuncArg then don't handle multiple names after the type
@@ -360,7 +368,7 @@ function C_H_Parser:parseDecl(quals, isStructDecl, isFuncArg)
 	until not self:canbe(',', 'symbol')
 
 	-- in fact, maybe at this point I should be returning a unique node of the two together
-	-- just like I do with fwdDeclStruct
+	-- just like I do with fwdDecl
 	local decl = self:node('_decl',
 		-- the starting type on the left of the statement
 		startType,
@@ -371,7 +379,6 @@ function C_H_Parser:parseDecl(quals, isStructDecl, isFuncArg)
 		-- if it's not a structDecl or a funcArg then this is a stmt subdecl
 		--  so save the stmt-qualifiers
 		quals)
---DEBUG:assert(decl.serialize)
 	return decl
 end
 
@@ -419,20 +426,12 @@ function C_H_Parser:parseStartType()
 	elseif self:canbe('enum', 'keyword') then
 		local enumName = self:canbe(nil, 'name')
 
-		local ctype, fieldDest
-		if enumName then
-			-- TODO maybe not define the type here,
-			-- but instead return the enum name and enum values to whoever called this
-			-- and then based on 'typedef' or not, define the type versus look the type up.
-			ctype = self:node('_enumType', {
-				name = enumName,
-				baseType = assert(self.builtinTypes.uint32_t),
-			})
-			fieldDest = ctype.enumFields
-		else
-			fieldDest = self.anonEnumValues
-		end
-
+		local ctype = self:node('_enumType', {
+			name = enumName,
+			-- TODO does C have different enum types?
+			baseType = assert(self.builtinTypes.uint32_t),
+		})
+		
 		if self:canbe('{', 'symbol') then
 			-- define a new enum type
 			local first = true
@@ -445,7 +444,7 @@ function C_H_Parser:parseStartType()
 					enumValue = self:mustbe(nil, 'number')
 				end
 
-				fieldDest:insert(self:node('_enumdef', 
+				ctype.enumFields:insert(self:node('_enumdef', 
 					enumField,
 					enumValue	-- optional
 				))
@@ -481,24 +480,18 @@ function C_H_Parser:parseSubDecl(isStructDecl, isFuncArg)
 		-- parse the rest
 		-- start with this layer so we can parse multiple *'s 
 		local subdecl = self:parseSubDecl(isStructDecl, isFuncArg)
---DEBUG:assert(subdecl.serialize)
 		
 		-- wrap the rest in our ptr() and either const() or volateil()
 		subdecl = self:node('_ptr', subdecl)
---DEBUG:assert(subdecl.serialize)
 		if quals.const then
 			subdecl = self:node('_const', subdecl)
---DEBUG:assert(subdecl.serialize)
 		end
 		if quals.volatile then
 			subdecl = self:node('_volatile', subdecl)
---DEBUG:assert(subdecl.serialize)
 		end
 		return subdecl
 	else
-		local subdecl = self:parseSubDecl2(isStructDecl, isFuncArg)
---DEBUG:assert(subdecl.serialize)
-		return subdecl
+		return self:parseSubDecl2(isStructDecl, isFuncArg)
 	end
 end
 

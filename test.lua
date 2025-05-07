@@ -4,7 +4,13 @@ local C_H_Parser = require 'c-h-parser'
 local headers = C_H_Parser()
 
 assert(headers(
-	require'ext.path''test.h':read()
+	--require'ext.path''test.h':read()
+	--[[
+	require'ext.path''jpeglib.h':read()
+	--]]
+[[
+enum { JPEGLIB_H = 1 };
+]]
 ))
 
 --[=[
@@ -39,6 +45,7 @@ for i,ctype in ipairs(headers.declTypes) do
 end
 print()
 
+-- this should be a collection of enumdef's 
 print'non-typedef enums:'
 for i,enumDef in ipairs(headers.anonEnumValues) do
 	print('#'..i, enumDef:toC()..';')

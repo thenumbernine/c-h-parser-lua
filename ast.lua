@@ -36,9 +36,8 @@ local _ctype = nodeclass'ctype'
 function _ctype:init(name)
 	self.name = name
 end
-function _ctype:serialize(out, varname)
+function _ctype:serialize(out)
 	out(self.name)
-	if varname then out(varname) end
 end
 
 local _ptr = nodeclass'ptr'
@@ -144,7 +143,7 @@ function _structType:init(args)
 	-- fields is optional, empty means it is a fwd-declare struct (which can still be used in declarations of ptrs)
 	self.fields = args.fields
 end
-function _structType:serialize(out, varname)
+function _structType:serialize(out)
 	out(self.isUnion and 'union' or 'struct')
 	if self.name then out(self.name) end
 	if self.fields then
@@ -159,9 +158,6 @@ function _structType:serialize(out, varname)
 		end
 		out'}'
 	end
-	if varname then
-		out(varname)
-	end
 end
 
 -- pars should be a form of subdecl that just wraps subdecls ...
@@ -170,7 +166,7 @@ local _partype = nodeclass'partype'
 function _partype:init(arg)
 	self[1] = arg
 end
-function _partype:serialize(out, varname)
+function _partype:serialize(out)
 	out'('
 	self[1]:serialize(out)
 	out')'
@@ -194,13 +190,14 @@ function _funcType:serialize(out)
 	out')'
 end
 
+-- fwd decl for struct { ... }; and enum { ... };
 -- wrapper to let the parser know that a stmt was a single struct -- no typedef, no vars, no nothing.
 -- then it goes on the 'declTypes'
-local _fwdDeclStruct = nodeclass'fwdDeclStruct'
-function _fwdDeclStruct:init(startType)
+local _fwdDecl = nodeclass'fwdDecl'
+function _fwdDecl:init(startType)
 	self[1] = startType
 end
-function _fwdDeclStruct:serialize(out)
+function _fwdDecl:serialize(out)
 	self[1]:serialize(out)
 end
 
