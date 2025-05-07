@@ -18,18 +18,21 @@ typedef int INT;
 typedef int * PINT;
 typedef int INT2, * PINT2;
 
+struct namedStruct2 {};	//TODO parses but missing its empty fields...
 struct FwdStruct;
 typedef struct FwdStruct2 FwdStruct2Name;
 struct FwdStructWithVar *fsv2;
-//struct namedStruct2 {};	//TODO parses but missing its empty fields...
-//struct {} anonStructVar;
-//struct namedStructWith {} namedStructVar;
+struct {} anonStructVar;
+struct namedStructWith {} namedStructVar;
 
 int (ipar);
 int ((ipar2));
 
 int if1();
 int (*ifp1)();
+
+int if1ar[20]();
+int if1ari[20](int d);
 ]])
 
 --[=[

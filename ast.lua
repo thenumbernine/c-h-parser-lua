@@ -38,6 +38,11 @@ end
 
 local _ctype = nodeclass'ctype'
 --[[
+TODO get rid of all of this.
+use subclasses
+don't track and cache ctype names.
+do track AST's of parenthesis.
+
 args:
 	name = it could be nameless for typedef'd or anonymous nested structs
 	anonymous = true for name == nil for nested anonymous structs/unions
@@ -86,7 +91,6 @@ function _ctype:init(args)
 				error("_ctype:init with baseType, isn't arrayCount, isn't isPointer, isn't isConst, isn't isVolatile ...")
 			end
 		else
-			self.name = nextuniquename()
 			self.anonymous = true
 		end
 --DEBUG:print('...CType new name', self.name)
@@ -94,8 +98,17 @@ function _ctype:init(args)
 --DEBUG:print('...CType already has name', self.name)
 	end
 	self.parser = assert.index(args, 'parser')	-- there for prims, not needed otherwise
+	
+	--[[ do I need to even do this?
+	-- If this is a parser->AST then I should throw out the caching and name lookups.
+	-- That would come later.
 	if self.parser.ctypes[self.name] then error("tried to redefine "..tostring(self.name)) end
-	self.parser.ctypes[self.name] = self
+	--]]
+	-- don't register anonymous-struct names
+	-- TODO DON'T REGISTER AT ALL, SAVE IT FOR THE NEXT GUY
+	if self.name then
+		self.parser.ctypes[self.name] = self
+	end
 
 	self.fields = args.fields
 	self.funcArgs = args.funcArgs
@@ -119,12 +132,9 @@ function _ctype:init(args)
 	elseif not self.fields then
 	elseif not self.funcArgs then
 	else
-		-- struct?
-		assert(self.fields)
+		-- fwd-decl struct?
 		-- expect :finalize to be called later
 	end
-
---DEBUG:print('setting ctype['..self.name..'] = '..tostring(self))
 end
 
 function _ctype:serialize(out, varname)
@@ -133,6 +143,20 @@ function _ctype:serialize(out, varname)
 		out'typedef'
 		self.baseType:serialize(out)
 		out(self.name)
+	elseif self.isStruct then
+		out(self.name or (
+			self.isUnion and 'union' or 'struct'
+		))
+		if self.fields then
+			out'{'
+			for _,field in ipairs(self.fields) do
+				field:serialize(out)
+			end
+			out'}'
+		end
+		if varname then
+			out(varname)
+		end
 	elseif self.name then
 --[[ use the stored name		
 		out(self.name)
@@ -176,6 +200,13 @@ function _ctype:serialize(out, varname)
 			out(self.name)	-- anonymous here?
 			if varname then
 				out(varname)
+			end
+			if self.fields then
+				out'{'
+				for _,field in ipairs(self.fields) do
+					field:serialize(out)
+				end
+				out'}'
 			end
 		end
 --]]
@@ -272,10 +303,10 @@ end
 local _fwdDeclStruct = nodeclass'fwdDeclStruct'
 function _fwdDeclStruct:init(args)
 	self.parser = assert.index(args, 'parser')
-	self.name = assert.index(args, 'name')
+	self.type = assert.index(args, 'type')
 end
 function _fwdDeclStruct:serialize(out)
-	out(self.name)
+	self.type:serialize(out)
 end
 
 return ast

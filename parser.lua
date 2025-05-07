@@ -125,15 +125,16 @@ function C_H_Parser:getVolatileType(baseType)
 end
 
 
-function C_H_Parser:getArrayType(baseType, ar)
-	local ctype = self:getCType(baseType.name..'['..ar..']')
---DEBUG:print('looking for ctype name', baseType.name..'['..ar..'], got', ctype)
+function C_H_Parser:getArrayType(baseType, arrayCount)
+	local ctype = self:getCType(baseType.name..'['..arrayCount..']')
+--DEBUG:print('looking for ctype name', baseType.name..'['..arrayCount..'], got', ctype)
 	-- if not then make the array-type
 	if not ctype then
+		-- TODO _index() node ,make an AST after all.
 		ctype = self:node('_ctype', {
 			parser = self,
 			baseType = baseType,
-			arrayCount = ar,
+			arrayCount = arrayCount,
 		})
 	end
 	return ctype
@@ -417,10 +418,9 @@ function C_H_Parser:parseDecls(quals, isStructDecl, isFuncArg)
 	then
 		local fwdDecl = self:node('_fwdDeclStruct', {
 			parser = self,
-			name = startType.name,
+			type = startType,
 		})
 		return {fwdDecl}
-		--self.symbolsInOrder:insert(fwdDecl)
 	end
 
 	-- See if we're using a const type -- that reflects on every subsequent field
@@ -464,7 +464,8 @@ function C_H_Parser:parseStartType()
 		local isUnion = self.lasttoken == 'union'
 		local structName = self:canbe(nil, 'name')
 		-- now "struct "..structName is our type that we should test for collision.
-		structName = (isUnion and 'union ' or 'struct ')..structName
+		-- TODO here's where ctypes won't recognize this
+		-- or for no name, don't lookup in ctypes cuz it's anonymous
 
 		if self:canbe('{', 'symbol') then
 			local fields = table()
@@ -478,7 +479,9 @@ function C_H_Parser:parseStartType()
 			end
 			return self:node('_ctype', {
 				parser = self,
-				name = structName,
+				name = structName 
+					and (isUnion and 'union ' or 'struct '..structName) 
+					or nil,
 				fields = fields,
 				isStruct = true,
 				isUnion = isUnion,
@@ -489,7 +492,9 @@ function C_H_Parser:parseStartType()
 		-- ... TODO really just use self.tree anyways.
 		local ctype = self:node('_ctype', {
 			parser = self,
-			name = structName,
+			name = structName
+				and (isUnion and 'union ' or 'struct '..structName) 
+				or nil,
 			isStruct = true,
 			isUnion = isUnion,
 			-- fwd-declare ...
@@ -571,9 +576,9 @@ function C_H_Parser:parseSubDecl(startType, isStructDecl, isFuncArg)
 		end
 	end
 	
-	local subdecl = self:parseSubDecl2(startType, isStructDecl, isFuncArg)
---DEBUG:assert(subdecl)
-	return subdecl
+	local var = self:parseSubDecl2(startType, isStructDecl, isFuncArg)
+--DEBUG:assert(var)
+	return var
 end
 
 function C_H_Parser:parseSubDecl2(startType, isStructDecl, isFuncArg)
@@ -602,8 +607,8 @@ function C_H_Parser:parseSubDecl2(startType, isStructDecl, isFuncArg)
 			local quals = self:parseCVQuals()	-- see if there's a leading 'const'
 			-- arg 2 true = struct-type = only look for 'const' right of the type, not 'volatile', 'static', 'inline'.
 			-- arg 3 false = function-arg = only allow one name (and with an optional name at that), not multiple `int a,b,c`'s
-			local funcArg = self:parseDecls(quals, true, true)
-			funcArgs:insert(funcArg)
+			local subargs = self:parseDecls(quals, true, true)
+			funcArgs:append(subargs)
 		end
 
 		assert(not var.type.funcArgs, {msg="can't define a function of a function, right?  It needs to be a function pointer, right?"})
@@ -631,34 +636,34 @@ function C_H_Parser:parseSubDecl3(startType, isStructDecl, isFuncArg)
 		-- What do ( ) around a decl name do? scare off macros?
 		-- TODO maybe I should wrap this in a _par AST node
 		--  since for arrays we're going to complain if it's on any AST node other than the inner-most non-parenthsis AST node.
-		local subdecl = self:parseSubDecl4(startType, isStructDecl, isFuncArg)
---DEBUG:assert(subdecl)		
+		local var = self:parseSubDecl4(startType, isStructDecl, isFuncArg)
+--DEBUG:assert(var)		
 		self:mustbe(')', 'symbol')
 		-- TODO _parenthesis-wrapping node?
 		-- especially for making sure that function declarations only have arrays on the inner-most parentehsis?
-		return subdecl
+		return var
 	else
-		local subdecl = self:parseSubDecl4(startType, isStructDecl, isFuncArg)
---DEBUG:assert(subdecl)		
-		return subdecl
+		local var = self:parseSubDecl4(startType, isStructDecl, isFuncArg)
+--DEBUG:assert(var)		
+		return var
 	end
 end
 
 function C_H_Parser:parseSubDecl4(startType, isStructDecl, isFuncArg)
-	local subdecl = self:parseSubDecl5(startType, isStructDecl, isFuncArg)
+	local var = self:parseSubDecl5(startType, isStructDecl, isFuncArg)
 
 	if isStructDecl
 	and self:canbe(':', 'symbol') 
 	then
 		local bitfield = self:mustbe(nil, 'number')
-		subdecl.type = self:getBitFieldType(subdecl.type, bitfield)
+		var.subdecl.type = self:getBitFieldType(var.subdecl.type, bitfield)
 	end
 
-	return subdecl
+	return var
 end
 
 function C_H_Parser:parseSubDecl5(startType, isStructDecl, isFuncArg)
-	local subdecl = self:parseSubDecl6(startType, isStructDecl, isFuncArg)
+	local var = self:parseSubDecl6(startType, isStructDecl, isFuncArg)
 
 	-- TODO where to process arrays ...
 	-- ... they can nest in parenthesis
@@ -670,13 +675,15 @@ function C_H_Parser:parseSubDecl5(startType, isStructDecl, isFuncArg)
 
 		-- TODO also parse compile-time expressions
 		local arrayCount = self:mustbe(nil, 'number')
+		arrayCount = tonumber(arrayCount) or error{msg="bad array size "..arrayCount}
 		-- modifying this in-place won't come back to haunt me, right?
 		-- there's only one subdecl per func or var, so ... ?
-		subdecl.type = self:getArrayType(subdecl.type, arrayCount)
+assert(var.subdecl.type.name)
+		var.subdecl.type = self:getArrayType(var.subdecl.type, arrayCount)
 		self:mustbe(']', 'symbol')
 	end
 
-	return subdecl
+	return var
 end
 
 function C_H_Parser:parseSubDecl6(startType, isStructDecl, isFuncArg)
