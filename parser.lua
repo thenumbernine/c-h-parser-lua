@@ -574,7 +574,6 @@ function C_H_Parser:parseSubDecl3(startType, isStructDecl, isFuncArg)
 		arrayCount = tonumber(arrayCount) or error{msg="bad array size "..arrayCount}
 		-- modifying this in-place won't come back to haunt me, right?
 		-- there's only one subdecl per func or var, so ... ?
-assert(var.subdecl.type.name)
 		var.subdecl.type = self:getArrayType(var.subdecl.type, arrayCount)
 		self:mustbe(']', 'symbol')
 	end

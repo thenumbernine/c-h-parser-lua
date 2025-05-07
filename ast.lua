@@ -56,8 +56,6 @@ end
 local _ptrtype = nodeclass'ptrtype'
 function _ptrtype:init(args)
 	self.baseType = args.baseType
-	-- TODO get rid of .name
-	self.name = args.baseType.name..'*'
 end
 function _ptrtype:serialize(out, varname)
 	self.baseType:serialize(out)
@@ -68,8 +66,6 @@ end
 local _consttype = nodeclass'consttype'
 function _consttype:init(args)
 	self.baseType = args.baseType
-	-- TODO get rid of .name
-	self.name = args.baseType.name..' const'
 end
 function _consttype:serialize(out, varname)
 	self.baseType:serialize(out)
@@ -80,8 +76,6 @@ end
 local _volatiletype = nodeclass'volatiletype'
 function _volatiletype:init(args)
 	self.baseType = args.baseType
-	-- TODO get rid of .name
-	self.name = args.baseType.name..' volatile'
 end
 function _volatiletype:serialize(out, varname)
 	self.baseType:serialize(out)
@@ -93,8 +87,6 @@ local _arraytype = nodeclass'arraytype'
 function _arraytype:init(args)
 	self.baseType = args.baseType
 	self.arrayCount = args.arrayCount
-	-- TODO get rid of .name
-	self.name = args.baseType.name..'['..args.arrayCount..']'
 end
 function _arraytype:serialize(out, varname)
 	self.baseType:serialize(out, varname)
@@ -105,8 +97,8 @@ end
 
 local _typedef = nodeclass'typedef'
 function _typedef:init(args)
-	self.name = args.name
-	self.baseType = args.baseType
+	self.baseType = args.baseType	-- from type
+	self.name = args.name			-- to name
 end
 function _typedef:serialize(out)
 	out'typedef'
@@ -134,27 +126,6 @@ function _structType:serialize(out, varname)
 	if varname then
 		out(varname)
 	end
-end
-
-local _enumType = nodeclass'enumType'
-function _enumType:init(args)
-	self.name = args.name
-	self.baseType = args.baseType	-- always int32?
-	self.enumValues = table()	-- filled out after ctor
-end
-function _enumType:serialize(out)
-end
-
--- this and symbol has a bit of overlap - this is typeless - symbol is valueless
-local _enumdef = nodeclass'enumdef'
-function _enumdef:init(args)
-	self.name = assert.type(assert.index(args, 'name'), 'string')
-	self.value = assert.type(assert.index(args, 'value'), 'number')	-- number?  or expression?  or name?
-end
-function _enumdef:serialize(out)
-	out(self.name)
-	out'='
-	out(self.value)
 end
 
 --[[
@@ -209,12 +180,6 @@ local _funcType = nodeclass'funcType'
 function _funcType:init(args)
 	self.baseType = args.baseType
 	self.funcArgs = args.funcArgs
-
-	-- TODO get rid of this
-	-- what should name even be ...
-	-- why am I even using name ...
-	self.name = args.baseType.name .. funcArgsToC(args.funcArgs)
-
 end
 -- all ctype (subclasses? this isn't a subclass, but it is interchangeable with ctype)
 --  take 'varname' as the 2nd parameter
@@ -223,8 +188,8 @@ function _funcType:serialize(out, varname)
 	out(funcArgsToC(self.funcArgs))
 end
 
-
-
+-- wrapper to let the parser know that a stmt was a single struct -- no typedef, no vars, no nothing.
+-- then it goes on the 'declTypes'
 local _fwdDeclStruct = nodeclass'fwdDeclStruct'
 function _fwdDeclStruct:init(args)
 	self.type = assert.index(args, 'type')
@@ -232,5 +197,27 @@ end
 function _fwdDeclStruct:serialize(out)
 	self.type:serialize(out)
 end
+
+local _enumType = nodeclass'enumType'
+function _enumType:init(args)
+	self.name = args.name
+	self.baseType = args.baseType	-- always int32?
+	self.enumValues = table()	-- filled out after ctor
+end
+function _enumType:serialize(out)
+end
+
+-- this and symbol has a bit of overlap - this is typeless - symbol is valueless
+local _enumdef = nodeclass'enumdef'
+function _enumdef:init(args)
+	self.name = assert.type(assert.index(args, 'name'), 'string')
+	self.value = assert.type(assert.index(args, 'value'), 'number')	-- number?  or expression?  or name?
+end
+function _enumdef:serialize(out)
+	out(self.name)
+	out'='
+	out(self.value)
+end
+
 
 return ast
