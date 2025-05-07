@@ -188,10 +188,7 @@ function _ctype:serialize(out, varname)
 					out(varname)
 				end
 			elseif self.funcArgs then
-				self.baseType:serialize(out)
-				if varname then 
-					out(varname) 
-				end
+				self.baseType:serialize(out, varname)
 				out(funcArgsToC(self.funcArgs))
 			else
 				error("_ctype:serialize this should match the :init's name determination: "..tostring(self.name))

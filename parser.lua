@@ -632,38 +632,7 @@ function C_H_Parser:parseSubDecl2(startType, isStructDecl, isFuncArg)
 end
 
 function C_H_Parser:parseSubDecl3(startType, isStructDecl, isFuncArg)
-	if self:canbe('(', 'symbol') then
-		-- What do ( ) around a decl name do? scare off macros?
-		-- TODO maybe I should wrap this in a _par AST node
-		--  since for arrays we're going to complain if it's on any AST node other than the inner-most non-parenthsis AST node.
-		local var = self:parseSubDecl4(startType, isStructDecl, isFuncArg)
---DEBUG:assert(var)		
-		self:mustbe(')', 'symbol')
-		-- TODO _parenthesis-wrapping node?
-		-- especially for making sure that function declarations only have arrays on the inner-most parentehsis?
-		return var
-	else
-		local var = self:parseSubDecl4(startType, isStructDecl, isFuncArg)
---DEBUG:assert(var)		
-		return var
-	end
-end
-
-function C_H_Parser:parseSubDecl4(startType, isStructDecl, isFuncArg)
-	local var = self:parseSubDecl5(startType, isStructDecl, isFuncArg)
-
-	if isStructDecl
-	and self:canbe(':', 'symbol') 
-	then
-		local bitfield = self:mustbe(nil, 'number')
-		var.subdecl.type = self:getBitFieldType(var.subdecl.type, bitfield)
-	end
-
-	return var
-end
-
-function C_H_Parser:parseSubDecl5(startType, isStructDecl, isFuncArg)
-	local var = self:parseSubDecl6(startType, isStructDecl, isFuncArg)
+	local var = self:parseSubDecl4(startType, isStructDecl, isFuncArg)
 
 	-- TODO where to process arrays ...
 	-- ... they can nest in parenthesis
@@ -681,6 +650,37 @@ function C_H_Parser:parseSubDecl5(startType, isStructDecl, isFuncArg)
 assert(var.subdecl.type.name)
 		var.subdecl.type = self:getArrayType(var.subdecl.type, arrayCount)
 		self:mustbe(']', 'symbol')
+	end
+
+	return var
+end
+
+function C_H_Parser:parseSubDecl4(startType, isStructDecl, isFuncArg)
+	if self:canbe('(', 'symbol') then
+		-- What do ( ) around a decl name do? scare off macros?
+		-- TODO maybe I should wrap this in a _par AST node
+		--  since for arrays we're going to complain if it's on any AST node other than the inner-most non-parenthsis AST node.
+		local var = self:parseSubDecl5(startType, isStructDecl, isFuncArg)
+--DEBUG:assert(var)		
+		self:mustbe(')', 'symbol')
+		-- TODO _parenthesis-wrapping node?
+		-- especially for making sure that function declarations only have arrays on the inner-most parentehsis?
+		return var
+	else
+		local var = self:parseSubDecl5(startType, isStructDecl, isFuncArg)
+--DEBUG:assert(var)		
+		return var
+	end
+end
+
+function C_H_Parser:parseSubDecl5(startType, isStructDecl, isFuncArg)
+	local var = self:parseSubDecl6(startType, isStructDecl, isFuncArg)
+
+	if isStructDecl
+	and self:canbe(':', 'symbol') 
+	then
+		local bitfield = self:mustbe(nil, 'number')
+		var.subdecl.type = self:getBitFieldType(var.subdecl.type, bitfield)
 	end
 
 	return var
