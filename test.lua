@@ -14,6 +14,9 @@ const int volatile * volatile icvv;
 int * const ica, icb;	// => int * const a; int icb;
 int const * ica2, icb2;	// => int const * a; int const b;
 
+int arr[20];
+int arr2[20][30];
+
 typedef int INT;
 typedef int * PINT;
 typedef int INT2, * PINT2;
@@ -34,6 +37,13 @@ int (*ifp1)();
 int if1ar[20]();
 int if1ari[20](int d);
 int (*if1arip[20])(int d);
+
+struct memberFuncPtrStruct {
+	//int (*c)();			// TODO
+	//int (*c[20])(int d);	// TODO
+};
+
+
 ]])
 
 --[=[

@@ -96,7 +96,7 @@ function _arraytype:init(args)
 	-- TODO get rid of .name
 	self.name = args.baseType.name..'['..args.arrayCount..']'
 end
-function _arraytype:serialize(out)
+function _arraytype:serialize(out, varname)
 	self.baseType:serialize(out, varname)
 	out'['
 	out(self.arrayCount)
@@ -122,9 +122,8 @@ function _structType:init(args)
 	self.fields = args.fields
 end
 function _structType:serialize(out, varname)
-	out(self.name or (
-		self.isUnion and 'union' or 'struct'
-	))
+	out(self.isUnion and 'union' or 'struct')
+	if self.name then out(self.name) end
 	if self.fields then
 		out'{'
 		for _,field in ipairs(self.fields) do
@@ -168,9 +167,9 @@ this is created and returned to the rest for creating things like
 --]]
 local _subdecl = nodeclass'subdecl'
 function _subdecl:init(args)
-	self.isFuncArg = args.isFuncArg	-- does it matter?
-	self.isStructDecl = args.isStructDecl	-- does it matter?
-	self.name = args.name			-- optional for isFuncArg
+	self.isFuncArg = args.isFuncArg	-- do I need to store?
+	self.isStructDecl = args.isStructDecl	-- do I need to store?
+	self.name = args.name			-- optional for function args (isFuncArg) or anonymous struct/union fields
 	if not (self.isFuncArg) then
 		-- technically anonymous declarations just give you warnings that nothing is being defined...
 		assert(self.name, "expected name")

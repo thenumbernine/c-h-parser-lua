@@ -418,9 +418,7 @@ function C_H_Parser:parseStartType()
 				self:mustbe(';', 'symbol')
 			end
 			return self:node('_structType', {
-				name = structName 
-					and (isUnion and 'union ' or 'struct '..structName) 
-					or nil,
+				name = structName,	-- nil for anonymous
 				isUnion = isUnion,
 				fields = fields,
 			})
@@ -429,9 +427,7 @@ function C_H_Parser:parseStartType()
 		-- and then it's a forward-declaration of a struct, for the sake of other decl prototypes ...
 		-- ... TODO really just use self.tree anyways.
 		local ctype = self:node('_structType', {
-			name = structName
-				and (isUnion and 'union ' or 'struct '..structName) 
-				or nil,
+			name = structName,	-- nil for anonymous
 			isUnion = isUnion,
 			-- fwd-declare ...
 			-- but still legit here cuz it could be used for ptr-types in the same stmt.
@@ -568,11 +564,8 @@ function C_H_Parser:parseSubDecl3(startType, isStructDecl, isFuncArg)
 --DEBUG:print('C_H_Parser:parseCPSubDecl3', startType, isStructDecl, isFuncArg)
 	local var = self:parseSubDecl4(startType, isStructDecl, isFuncArg)
 
-	-- TODO where to process arrays ...
-	-- ... they can nest in parenthesis
-	-- ... but if we have any function-args in the overall decl
-	-- ... ... then we get an error if the array is anywhere except in the innermost parenthesis after the name.
-	if self:canbe('[', 'symbol') then
+	-- while-loop for multiple x[1][1][1]... ... can anything go between array decls?
+	while self:canbe('[', 'symbol') do
 		-- but honestly, if this is supposed to be the array-part of the function, then my parser has a problem.
 		--if func then error{msg="functions can't return arrays"} end
 
