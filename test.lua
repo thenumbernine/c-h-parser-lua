@@ -43,15 +43,12 @@ struct memberFuncPtrStruct {
 	int (*c)();	
 	int (*c[20])(int d);
 };
-/*
 
 typedef struct {
 	//int (*c)(int d)[20];	//function cannot return an array
 	int (*c[20])(int d);	// does that make this an array of fptrs?
 	int d;
 } (*fp)(int x, float y[20]);
-
-*/
 
 ]])
 

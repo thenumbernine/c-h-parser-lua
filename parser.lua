@@ -385,8 +385,8 @@ function C_H_Parser:parseStartType()
 				local quals = self:parseCVQuals()
 				-- 2nd 'true' means struct-decls, means only look for 'const' qualifier and not the rest (volatile extern etc)
 				-- 3rd 'false' means not a function-arg.  function-args can only have one name after the startType, not multiple.
-				local decls = self:parseDecl(quals, true, false)
-				fields:append(assert(decls))
+				local fielddecl = self:parseDecl(quals, true, false)
+				fields:insert(fielddecl)
 				self:mustbe(';', 'symbol')
 			end
 			return self:node('_structType', {
