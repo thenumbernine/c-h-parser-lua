@@ -538,7 +538,7 @@ function C_H_Parser:parseSubDecl4(isStructDecl, isFuncArg)
 	- optional for function-args
 	--]]
 
-	local ret
+	local subdecl
 
 	-- try for name
 	-- if not isFuncArg then must be name, but here it might be another subexpression so ...
@@ -547,18 +547,18 @@ function C_H_Parser:parseSubDecl4(isStructDecl, isFuncArg)
 	if name
 	--or isFuncArg	-- TODO this is going to be a problem
 	then
-		ret = self:node('_ctype', name)
+		subdecl = self:node('_ctype', name)
 	else
 		-- try for parenthesis-wrapping
 		if self:canbe('(', 'symbol') then
 			-- What do ( ) around a decl name do? scare off macros?
 			-- TODO maybe I should wrap this in a _partype AST node
 			--  since for arrays we're going to complain if it's on any AST node other than the inner-most non-parenthsis AST node.
-			ret = self:parseSubDecl(isStructDecl, isFuncArg)
---DEBUG:assert(ret)
+			subdecl = self:parseSubDecl(isStructDecl, isFuncArg)
+--DEBUG:assert(subdecl)
 			self:mustbe(')', 'symbol')
 			-- partype should go around the name and any internal function-args ...
-			ret = self:node('_partype', ret)
+			subdecl = self:node('_partype', subdecl)
 		else
 			-- and after name or parenthesis
 			--  try for function-arguments
@@ -566,15 +566,25 @@ function C_H_Parser:parseSubDecl4(isStructDecl, isFuncArg)
 		end
 	end
 
+	-- [[ TODO this is also above
+	-- there's gotta be a isngle place I can put it
+	while self:canbe('[', 'symbol') do
+		local arrayCount = self:mustbe(nil, 'number')
+		arrayCount = tonumber(arrayCount) or error{msg="bad array size "..arrayCount}
+		self:mustbe(']', 'symbol')
+		subdecl = self:node('_array', subdecl, arrayCount)
+	end
+	--]]
+
 	-- Function args can go here for now, until I figure out where they belong.
 	-- ... but how to tell function-args from parenthesis?
 	if self:canbe('(', 'symbol') then
 		--[[ TODO idk how even to tell the name now, it's buried in the AST somewhere
 		-- maybe I don't care
-		-- if we're not parsing a func-arg then we'll want our ret to have a name
+		-- if we're not parsing a func-arg then we'll want our subdecl to have a name
 		-- becuase functions all need names.
 		if not isFuncArg then
-			assert(ret.subdecl.name, {msg="function needs a name"})
+			assert(subdecl.subdecl.name, {msg="function needs a name"})
 		end
 		--]]
 
@@ -590,19 +600,19 @@ function C_H_Parser:parseSubDecl4(isStructDecl, isFuncArg)
 			local quals = self:parseCVQuals()	-- see if there's a leading 'const'
 			-- arg 2 true = struct-type = only look for 'const' right of the type, not 'volatile', 'static', 'inline'.
 			-- arg 3 false = function-arg = only allow one name (and with an optional name at that), not multiple `int a,b,c`'s
-			local subargs = self:parseDecl(quals, true, true)
-			funcArgs:append(subargs)
+			local argdecl = self:parseDecl(quals, true, true)
+			funcArgs:insert(argdecl)
 		end
 
 		-- TODO another validity check I stopped caring about
 		--assert(not var.type.funcArgs, {msg="can't define a function of a function, right?  It needs to be a function pointer, right?"})
-		
+	
 		-- TODO should I even od this?  how about a unique new funcType node? same with arrayType, ptrType, constType, structType, enumType, etc ...
 		-- but what about unique type name registration and caching ...
-		ret = self:node('_funcType', ret, funcArgs)
+		subdecl = self:node('_funcType', subdecl, funcArgs)
 	end
 
-	return ret
+	return subdecl
 end
 
 return C_H_Parser

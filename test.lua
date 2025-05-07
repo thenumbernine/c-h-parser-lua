@@ -28,12 +28,12 @@ struct FwdStructWithVar *fsv2;
 struct {} anonStructVar;
 struct namedStructWith {} namedStructVar;
 
+int ifi(int i);
 int (ipar);
 int ((ipar2));
 
 int if1();
 int (*ifp1)();
-/*
 
 int if1ar[20]();
 int if1ari[20](int d);
@@ -43,6 +43,7 @@ struct memberFuncPtrStruct {
 	int (*c)();	
 	int (*c[20])(int d);
 };
+/*
 
 typedef struct {
 	//int (*c)(int d)[20];	//function cannot return an array
