@@ -99,17 +99,6 @@ function _ctype:init(args)
 	end
 	self.parser = assert.index(args, 'parser')	-- there for prims, not needed otherwise
 	
-	--[[ do I need to even do this?
-	-- If this is a parser->AST then I should throw out the caching and name lookups.
-	-- That would come later.
-	if self.parser.ctypes[self.name] then error("tried to redefine "..tostring(self.name)) end
-	--]]
-	-- don't register anonymous-struct names
-	-- TODO DON'T REGISTER AT ALL, SAVE IT FOR THE NEXT GUY
-	if self.name then
-		self.parser.ctypes[self.name] = self
-	end
-
 	self.fields = args.fields
 	self.funcArgs = args.funcArgs
 	self.isTypedef = args.isTypedef

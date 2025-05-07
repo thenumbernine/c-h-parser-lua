@@ -60,50 +60,15 @@ local C_H_Parser = Parser:subclass()
 
 C_H_Parser.ast = require 'c-h-parser.ast'
 
--- follow typedef baseType lookups to the origin and return that
-function C_H_Parser:getCType(typename)
-	local ctype = self.ctypes[typename]
-	if not ctype then return end
-
-	-- TODO should typedefs be ctypes?
-	if ctype.isTypedef then
-		local sofar = {}
-		-- if it has a baseType and no arrayCount then it's just a typedef ...
-		repeat
-			if sofar[ctype] then
-				error"found a typedef loop"
-			end
-			sofar[ctype] = true
-			ctype = assert.index(ctype, 'baseType')
-		until not ctype.isTypedef
-	end
-	return ctype
-end
-
 function C_H_Parser:getPtrType(baseType)
---DEBUG:print('getPtrType', baseType)
-	local typename = baseType.name..'*'
---DEBUG:print('getPtrType typename', typename)
-	local ptrType = self:getCType(typename)
-	if ptrType then
---DEBUG:print('...getPtrType found old', ptrType, ptrType == self.ctypes.void, ptrType==self.ctypes['void*'])
-		return ptrType
-	end
-	ptrType = self:node('_ctype', {
+	return self:node('_ctype', {
+		parser = self,
 		baseType = baseType,
 		isPointer = true,
-		parser = self,
 	})
---DEBUG:print('...getPtrType made new', ptrType)
-	return ptrType
 end
 
 function C_H_Parser:getConstType(baseType)
-	if baseType.isConst then return baseType end
-	local typename = baseType.name..' const'	-- matches _ctype:init name builder
-	local constType = self:getCType(typename)
-	if constType then return constType end
-	-- within the ctor it'll assign to self:getCType i.e. self.ctypes[]
 	return self:node('_ctype', {
 		parser = self,
 		baseType = baseType,
@@ -112,11 +77,6 @@ function C_H_Parser:getConstType(baseType)
 end
 
 function C_H_Parser:getVolatileType(baseType)
-	if baseType.isVolatile then return baseType end
-	local typename = baseType.name..' volatile'	-- matches _ctype:init name builder
-	local volatileType = self:getCType(typename)
-	if volatileType then return volatileType end
-	-- within the ctor it'll assign to self:getCType i.e. self.ctypes[]
 	return self:node('_ctype', {
 		parser = self,
 		baseType = baseType,
@@ -126,25 +86,17 @@ end
 
 
 function C_H_Parser:getArrayType(baseType, arrayCount)
-	local ctype = self:getCType(baseType.name..'['..arrayCount..']')
---DEBUG:print('looking for ctype name', baseType.name..'['..arrayCount..'], got', ctype)
-	-- if not then make the array-type
-	if not ctype then
-		-- TODO _index() node ,make an AST after all.
-		ctype = self:node('_ctype', {
-			parser = self,
-			baseType = baseType,
-			arrayCount = arrayCount,
-		})
-	end
-	return ctype
+	return self:node('_ctype', {
+		parser = self,
+		baseType = baseType,
+		arrayCount = arrayCount,
+	})
 end
 
 -- forward to __call
 function C_H_Parser:init(args)
-
-	-- put types here ... for name
-	self.ctypes = {}
+	-- used for referencing later
+	self.builtinTypes = {}
 
 	-- put declared types in-order here
 	self.declTypes = table()
@@ -225,7 +177,7 @@ size_t
 ssize_t
 ptrdiff_t
 ]], '\n')) do
-		self:node('_ctype', {name=name, isPrimitive=true, parser=self})
+		self.builtinTypes[name] = self:node('_ctype', {name=name, isPrimitive=true, parser=self})
 	end
 
 	if args then
@@ -512,7 +464,7 @@ function C_H_Parser:parseStartType()
 			ctype = self:node('_ctype', {
 				parser = self,
 				name = enumName,
-				baseType = assert(self.ctypes.uint32_t),
+				baseType = assert(self.builtinTypes.uint32_t),
 				isEnum = true,
 			})
 			ctype.enumValues = table()	-- TODO in ctor
@@ -551,9 +503,10 @@ function C_H_Parser:parseStartType()
 		end
 	else
 		local typename = self:mustbe(nil, 'name')
-		-- this typename is going to be the type of whatever comes next -- symbol, or typedef.
-		-- so it must exist
-		return assert(self:getCType(typename), {msg="unknown type "..tostring(typename)})
+		return self:node('_ctype', {
+			parser = self,
+			name = typename,
+		})
 	end
 end
 
