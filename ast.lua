@@ -262,7 +262,7 @@ end
 function _enumType:serialize(out)
 	out'enum'
 	if self.name then out(self.name) end
-	if #self.fields > 0 then
+	if self.fields then
 		out'{'
 		out'\n'
 		out.tabs = out.tabs + 1
@@ -288,7 +288,7 @@ function _enumdef:serialize(out)
 	out(self.name)
 	if self.value then
 		out'='
-		out(self.value)
+		self.value:serialize(out)
 	end
 end
 
@@ -298,6 +298,14 @@ function _vararg:serialize(out)
 end
 
 -- me slowly adding expressions for enums ...
+
+local _number = nodeclass'number'
+function _number:init(value)
+	self[1] = value
+end
+function _number:serialize(out)
+	out(self[1])
+end
 
 local _unm = nodeclass'unm'
 function _unm:init(arg)

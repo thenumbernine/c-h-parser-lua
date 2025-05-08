@@ -561,7 +561,7 @@ function C_H_Parser:parseExpr()
 	if self:canbe('-', 'symbol') then
 		return self:node('_unm', self:parseExpr())
 	end
-	return self:mustbe(nil, 'number')
+	return self:node('_number', self:mustbe(nil, 'number'))
 end
 
 return C_H_Parser

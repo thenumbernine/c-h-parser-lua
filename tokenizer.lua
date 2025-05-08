@@ -1,4 +1,5 @@
 local string = require 'ext.string'
+local assert = require 'ext.assert'
 
 local Tokenizer = require 'parser.base.tokenizer'
 local C_H_Tokenizer = Tokenizer:subclass()
@@ -37,6 +38,30 @@ function C_H_Tokenizer:parseBlockComment()
 	return true --r.lasttoken
 end
 
--- TODO extend Tokenizer:parseNumber to handle multiple number types, not just hex/dec
+function C_H_Tokenizer:parseHexNumber()
+	local r = self.r
+	local token = r:mustbe('[%da-fA-F]+', 'malformed number')
+	if r:canbe'LL' then
+		token = token .. 'LL'
+	elseif r:canbe'ULL' then
+		token = token .. 'ULL'
+	end
+	coroutine.yield('0x'..token, 'number')
+end
+
+function C_H_Tokenizer:parseDecNumber()
+	local r = self.r
+	local token = r:canbe'[%.%d]+'
+	assert.le(#token:gsub('[^%.]',''), 1, 'malformed number')
+	if r:canbe'e' then
+		token = token .. r.lasttoken
+		token = token .. r:mustbe('[%+%-]%d+', 'malformed number')
+	elseif r:canbe'LL' then
+		token = token .. 'LL'
+	elseif r:canbe'ULL' then
+		token = token .. 'ULL'
+	end
+	coroutine.yield(token, 'number')
+end
 
 return C_H_Tokenizer
