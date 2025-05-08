@@ -37,6 +37,8 @@ function AST:toC()
 				s = s .. x
 			elseif x == ')' and lastChar == ' ' then	-- " "+")" => ")"
 				s = s:sub(1,-2) .. x
+			elseif lastChar == ')' and x:match'^[_%w]' then	-- ') '+name
+				s = s .. sep .. x
 			elseif lastChar == '(' and x == '*' then -- no space between (*
 				-- also, if the char before (* is a %w then put a space between %w and (
 				if s:sub(-2,-2):match'%w' then
@@ -147,6 +149,12 @@ local function outputStmtQuals(qualSet, out)
 	for _,q in ipairs(stmtQuals) do
 		if qualSet[q] then
 			out(q)
+		end
+	end
+	-- attributes always
+	if qualSet.__attribute__ then
+		for _,attr in ipairs(qualSet.__attribute__) do
+			attr:serialize(out)
 		end
 	end
 end
@@ -329,6 +337,48 @@ end
 function _unm:serialize(out)
 	out'-'
 	self[1]:serialize(out)
+end
+
+-- used in attributes, should also be used in _var's name and in _ctype's name maybe but idk
+local _name = nodeclass'name'
+function _name:init(arg)
+	self[1] = assert.type(arg, 'string')
+end
+function _name:serialize(out)
+	out(self[1])
+end
+
+local _attr = nodeclass'attr'	-- __attribute(( ... ))
+function _attr:init(...)
+	for i=1,select('#', ...) do
+		self[i] = select(i, ...)
+	end
+	self.n = select('#', ...)
+end
+function _attr:serialize(out)
+	out'__attribute__'
+	out'('
+	out'('
+	for i=1,self.n do
+		self[i]:serialize(out)
+	end
+	out')'
+	out')'
+end
+
+local _call = nodeclass'call'
+function _call:init(name, args)
+	self[1] = name
+	self.args = args
+end
+function _call:serialize(out)
+	self[1]:serialize(out)
+	out'('
+	for i,arg in ipairs(self.args) do
+		if i > 1 then out',' end
+		arg:serialize(out)
+	end
+	out')'
 end
 
 return ast

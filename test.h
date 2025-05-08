@@ -185,12 +185,12 @@ enum Enum1;
 //const enum Enum2;	// warning: const ignored
 enum Enum2 { Enum2_Foo };
 
-enum EnumName3 { Foo = 4 };
-const enum EnumDeclName4 { Foo, } foo1, *foo2;
+enum EnumName3 { EnumName3_Foo = 4 };
+const enum EnumDeclName4 { EnumName4_Foo, } enumdeclname4_foo1, *enumdeclname4_foo2;
 
 const enum Enum3 {	// const goes to the subdecls
 	Enum3_Foo,
-} foo1, *foo2;
+} enum3_foo1, *enum3_foo2;
 
 extern int externfunctype1(int);
 int extern externfunctype2(int);

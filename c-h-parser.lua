@@ -93,27 +93,65 @@ function C_H_Parser:parseQualifiers(keywords, qualifiers)
 	qualifiers = qualifiers or {}
 	local found
 	repeat
-		found = nil
-		for _,keyword in ipairs(keywords) do
-			if type(keyword) == 'string' then
-				if self:canbe(keyword, 'keyword') then
-					-- warning Wduplicate-decl-specifier
-					--assert(not qualifiers[keyword], {msg="warning duplciate '"..keyword.."' qualifier"})
-					qualifiers[keyword] = true
-					found = true
+print('found', self.t.token, self.t.tokentype)		
+		-- special case, for all qualifiers, include __attribute__ here
+		if self:canbe('__attribute__', 'keyword') then
+			-- special case .__attribute__ is a table holding attributes to-be-serialized
+			local names = table()	-- list of words in the attribute
+			self:mustbe('(', 'symbol')
+			self:mustbe('(', 'symbol')
+			repeat
+				local name = self:mustbe(nil, 'name')
+				name = self:node('_name', name)
+				if self:canbe('(', 'symbol') then
+					local args = table()
+					repeat
+						-- list of strings or numbers ...
+						local numval = self:canbe(nil, 'number') 
+						if numval then
+							args:insert(self:node('_number', numval))
+						else
+							local strval = self:canbe(nil, 'string')
+							if strval then
+								args:insert(self:node('_string', strval))
+							else
+								error{msg="attribute got unknown parameter"}
+							end
+						end
+					until not self:canbe(',', 'symbol')
+					self:mustbe(')', 'symbol')
+					name = self:node('_call', name, args)
 				end
-			elseif type(keyword) == 'table' then
-				for _,keywordOption in ipairs(keyword) do
-					if self:canbe(keywordOption, 'keyword') then
+				names:insert(name)
+			until not self:canbe(',', 'symbol')
+			self:mustbe(')', 'symbol')
+			self:mustbe(')', 'symbol')
+			qualifiers.__attribute__ = qualifiers.__attribute__ or table()
+			qualifiers.__attribute__:insert(self:node('_attr', table.unpack(names)))
+		else
+
+			found = nil
+			for _,keyword in ipairs(keywords) do
+				if type(keyword) == 'string' then
+					if self:canbe(keyword, 'keyword') then
 						-- warning Wduplicate-decl-specifier
-						--assert(not qualifiers[keyword[1]], {msg="warning duplciate '"..keyword[1].."' qualifier"})
-						qualifiers[keyword[1]] = true
+						--assert(not qualifiers[keyword], {msg="warning duplciate '"..keyword.."' qualifier"})
+						qualifiers[keyword] = true
 						found = true
-						break
 					end
+				elseif type(keyword) == 'table' then
+					for _,keywordOption in ipairs(keyword) do
+						if self:canbe(keywordOption, 'keyword') then
+							-- warning Wduplicate-decl-specifier
+							--assert(not qualifiers[keyword[1]], {msg="warning duplciate '"..keyword[1].."' qualifier"})
+							qualifiers[keyword[1]] = true
+							found = true
+							break
+						end
+					end
+				else
+					error("unknown arg type "..type(keyword))
 				end
-			else
-				error("unknown arg type "..type(keyword))
 			end
 		end
 	until not found

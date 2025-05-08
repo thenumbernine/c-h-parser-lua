@@ -19,8 +19,9 @@ extern
 inline
 __inline
 __inline__
+__attribute__
 volatile
-	]]):gmatch'%w+' do
+	]]):gmatch'%S+' do
 		self.keywords[w] = true
 	end
 end
