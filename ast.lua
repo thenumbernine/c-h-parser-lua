@@ -292,4 +292,20 @@ function _enumdef:serialize(out)
 	end
 end
 
+local _vararg = nodeclass'vararg'
+function _vararg:serialize(out)
+	out'..'
+end
+
+-- me slowly adding expressions for enums ...
+
+local _unm = nodeclass'unm'
+function _unm:init(arg)
+	self[1] = arg
+end
+function _unm:serialize(out)
+	out'-'
+	self[1]:serialize(out)
+end
+
 return ast

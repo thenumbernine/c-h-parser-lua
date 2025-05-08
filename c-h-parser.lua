@@ -19,7 +19,7 @@ local Tokenizer = require 'parser.base.tokenizer'
 local C_H_Tokenizer = Tokenizer:subclass()
 
 function C_H_Tokenizer:initSymbolsAndKeywords()
-	for w in ([[* ( ) { } [ ] ; : , =]]):gmatch('%S+') do
+	for w in ([[... * ( ) { } [ ] ; : , = -]]):gmatch('%S+') do
 		self.symbols:insert(w)
 	end
 
@@ -358,16 +358,11 @@ function C_H_Parser:parseStartType()
 			repeat
 				local enumField = self:mustbe(nil, 'name')
 
-				local enumValue
+				local enumValue	-- optional
 				if self:canbe('=', 'symbol') then
-					-- TODO handle enum expressions
-					enumValue = self:mustbe(nil, 'number')
+					enumValue = self:parseExpr()
 				end
-
-				fields:insert(self:node('_enumdef',
-					enumField,
-					enumValue	-- optional
-				))
+				fields:insert(self:node('_enumdef', enumField, enumValue))
 
 				if self:canbe(',', 'symbol') then
 					if self:canbe('}', 'symbol') then break end
@@ -578,12 +573,16 @@ function C_H_Parser:parseSubDecl4(isStructDecl, isFuncArg)
 			end
 			first = false
 
-			-- funcArg:
-			local quals = self:parseCVQuals()	-- see if there's a leading 'const'
-			-- arg 2 true = struct-type = only look for 'const' right of the type, not 'volatile', 'static', 'inline'.
-			-- arg 3 false = function-arg = only allow one name (and with an optional name at that), not multiple `int a,b,c`'s
-			local argdecl = self:parseDecl(quals, true, true)
-			funcArgs:insert(argdecl)
+			if self:canbe('...', 'symbol') then
+				funcArgs:insert(self:node'_vararg')
+			else
+				-- funcArg:
+				local quals = self:parseCVQuals()	-- see if there's a leading 'const'
+				-- arg 2 true = struct-type = only look for 'const' right of the type, not 'volatile', 'static', 'inline'.
+				-- arg 3 false = function-arg = only allow one name (and with an optional name at that), not multiple `int a,b,c`'s
+				local argdecl = self:parseDecl(quals, true, true)
+				funcArgs:insert(argdecl)
+			end
 		end
 
 		-- TODO another validity check I stopped caring about
@@ -595,6 +594,13 @@ function C_H_Parser:parseSubDecl4(isStructDecl, isFuncArg)
 	end
 
 	return subdecl
+end
+
+function C_H_Parser:parseExpr()
+	if self:canbe('-', 'symbol') then
+		return self:node('_unm', self:parseExpr())
+	end
+	return self:mustbe(nil, 'number')
 end
 
 return C_H_Parser
