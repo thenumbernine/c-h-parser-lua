@@ -251,6 +251,7 @@ function C_H_Parser:parseStmtQuals(qualifiers)
 		{'inline', '__inline', '__inline__'},
 		'const',
 		'volatile',
+		'restrict',
 	}, qualifiers)
 end
 
@@ -269,7 +270,7 @@ function C_H_Parser:parseStmt()
 	--stmtQuals.extern	-- function only
 	--stmtQuals.inline	-- function only
 
-	-- forward on 'const' and 'volatile' to the type-qualifiers
+	-- forward on 'const' 'volatile' 'restrict' to the type-qualifiers
 
 --DEBUG:print('pre-decl qualifiers:', require'ext.tolua'(stmtQuals))
 
@@ -370,6 +371,10 @@ function C_H_Parser:parseDecl(quals, isStructDecl, isFuncArg)
 		--startType = self:node('_volatile', startType)
 		startType.name = (startType.name or '')..' volatile'
 	end
+	if quals.restrict then
+		--startType = self:node('_restrict', startType)
+		startType.name = (startType.name or '')..' restrict'
+	end
 	--]]
 
 	-- always decl here?
@@ -418,7 +423,7 @@ function C_H_Parser:parseSubDeclWithAttrs(isStructDecl, isFuncArg)
 end
 
 function C_H_Parser:parseCVQuals()
-	return self:parseQualifiers{'const', 'volatile'}
+	return self:parseQualifiers{'const', 'volatile', 'restrict'}
 end
 
 -- This is the start of a declaration, before the *cv-specific comma-separated stuff to the right
@@ -551,6 +556,9 @@ function C_H_Parser:parseSubDecl(isStructDecl, isFuncArg)
 		end
 		if quals.volatile then
 			subdecl = self:node('_volatile', subdecl)
+		end
+		if quals.restrict then
+			subdecl = self:node('_restrict', subdecl)
 		end
 		subdecl = self:node('_ptr', subdecl)
 		return subdecl

@@ -25,6 +25,7 @@ __inline__
 __attribute
 __attribute__
 volatile
+restrict
 	]]):gmatch'%S+' do
 		self.keywords[w] = true
 	end

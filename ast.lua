@@ -144,6 +144,15 @@ function _volatile:serialize(out)
 	self[1]:serialize(out)
 end
 
+local _restrict = nodeclass'restrict'
+function _restrict:init(ch)
+	self[1] = ch
+end
+function _restrict:serialize(out)
+	out'restrict'
+	self[1]:serialize(out)
+end
+
 local _array = nodeclass'array'
 function _array:init(ch, count)
 	self[1] = ch
