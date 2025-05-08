@@ -19,6 +19,7 @@ extern
 inline
 __inline
 __inline__
+__attribute
 __attribute__
 volatile
 	]]):gmatch'%S+' do

@@ -246,4 +246,9 @@ typedef void FuncType(int, char, double);
 // nope.
 //int funcofsubdecls(int a, b);
 
-extern __attribute__((attrname)) __attribute__((attr2(k,"v"))) int x;
+extern
+	__attribute__((deprecated))
+	__attribute__((visibility("default")))
+		int attrtest1x;
+extern int attrtest1 __attribute((deprecated)),
+	attrtest2 __attribute__((deprecated));

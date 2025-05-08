@@ -96,7 +96,9 @@ function C_H_Parser:parseQualifiers(keywords, qualifiers)
 		found = nil
 
 		-- special case, for all qualifiers, include __attribute__ here
-		if self:canbe('__attribute__', 'keyword') then
+		if self:canbe('__attribute__', 'keyword')
+		or self:canbe('__attribute', 'keyword')
+		then
 			found = true
 			-- special case .__attribute__ is a table holding attributes to-be-serialized
 			local names = table()	-- list of words in the attribute
@@ -304,7 +306,7 @@ function C_H_Parser:parseDecl(quals, isStructDecl, isFuncArg)
 
 	local subdecls = table()
 	repeat
-		local subdecl = self:parseSubDecl(isStructDecl, isFuncArg)
+		local subdecl = self:parseSubDeclWithAttrs(isStructDecl, isFuncArg)
 --DEBUG:assert(subdecl)
 		subdecls:insert(subdecl)
 
@@ -325,6 +327,17 @@ function C_H_Parser:parseDecl(quals, isStructDecl, isFuncArg)
 		--  so save the stmt-qualifiers
 		quals)
 	return decl
+end
+
+function C_H_Parser:parseSubDeclWithAttrs(isStructDecl, isFuncArg)
+	local subdecl = self:parseSubDecl(isStructDecl, isFuncArg)
+	-- where can attrs go?
+	local attrQuals = self:parseQualifiers{}	-- parse only __attribute__ qualifier here
+	if attrQuals.__attribute__ then
+		return self:node('_subdeclAttrQual', subdecl, attrQuals.__attribute__)
+	else
+		return subdecl
+	end
 end
 
 function C_H_Parser:parseCVQuals()

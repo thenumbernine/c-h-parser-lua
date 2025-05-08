@@ -209,6 +209,18 @@ function _decl:serialize(out)
 	end
 end
 
+local _subdeclAttrQual = nodeclass'subdeclAttrQual'
+function _subdeclAttrQual:init(subdecl, attrs)
+	self[1] = subdecl
+	self.attrs = attrs
+end
+function _subdeclAttrQual:serialize(out)
+	self[1]:serialize(out)
+	for _,attr in ipairs(self.attrs) do
+		attr:serialize(out)
+	end
+end
+
 local _var = nodeclass'var'
 function _var:init(name)
 	self[1] = name
