@@ -39,14 +39,24 @@ function C_H_Tokenizer:parseBlockComment()
 	return true --r.lasttoken
 end
 
+function C_H_Tokenizer:checkNumberSuffix(token)
+	local r = self.r
+	if r:canbe'[Uu]'
+	or r:canbe'[Ll]'
+	or r:canbe'[Zz]'
+	or r:canbe'[Uu][Ll]'
+	or r:canbe'[Ll][Ll]'
+	or r:canbe'[Uu][Ll][Ll]'
+	then
+		return token .. r.lasttoken
+	end
+	return token
+end
+
 function C_H_Tokenizer:parseHexNumber()
 	local r = self.r
 	local token = r:mustbe('[%da-fA-F]+', 'malformed number')
-	if r:canbe'LL' then
-		token = token .. 'LL'
-	elseif r:canbe'ULL' then
-		token = token .. 'ULL'
-	end
+	token = self:checkNumberSuffix(token)
 	coroutine.yield('0x'..token, 'number')
 end
 
@@ -57,10 +67,8 @@ function C_H_Tokenizer:parseDecNumber()
 	if r:canbe'e' then
 		token = token .. r.lasttoken
 		token = token .. r:mustbe('[%+%-]%d+', 'malformed number')
-	elseif r:canbe'LL' then
-		token = token .. 'LL'
-	elseif r:canbe'ULL' then
-		token = token .. 'ULL'
+	else
+		token = self:checkNumberSuffix(token)
 	end
 	coroutine.yield(token, 'number')
 end
