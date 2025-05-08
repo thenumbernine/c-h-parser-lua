@@ -1,5 +1,6 @@
 local assert = require 'ext.assert'
 local table = require 'ext.table'
+local tolua = require 'ext.tolua'
 local BaseAST = require 'parser.base.ast'
 
 local ast = {}
@@ -28,7 +29,7 @@ function AST:toC()
 
 	local out = setmetatable({}, {
 		__call = function(out, x)
-			x = tostring(x)
+--DEBUG:assert.type(x, 'string')
 --DEBUG:print('AST:toC out', require 'ext.tolua'(x))
 			local lastChar = s:sub(-1)
 			if x == '\n' then
@@ -81,6 +82,32 @@ local function nodeclass(type, parent, args)
 	return cl
 end
 ast.nodeclass = nodeclass
+
+
+-- used in attributes, should also be used in _var's name and in _ctype's name maybe but idk
+local _name = nodeclass'name'
+function _name:init(arg)
+	self[1] = assert.type(arg, 'string')
+end
+function _name:serialize(out)
+	out(self[1])
+end
+
+local _string = nodeclass'string'
+function _string:init(arg)
+	self[1] = assert.type(arg, 'string')
+end
+function _string:serialize(out)
+	out(tolua(self[1]))
+end
+
+local _number = nodeclass'number'
+function _number:init(value)
+	self[1] = value
+end
+function _number:serialize(out)
+	out(tostring(self[1]))
+end
 
 local _ctype = nodeclass'ctype'
 function _ctype:init(name)
@@ -321,15 +348,6 @@ function _vararg:serialize(out)
 end
 
 -- me slowly adding expressions for enums ...
-
-local _number = nodeclass'number'
-function _number:init(value)
-	self[1] = value
-end
-function _number:serialize(out)
-	out(self[1])
-end
-
 local _unm = nodeclass'unm'
 function _unm:init(arg)
 	self[1] = arg
@@ -337,15 +355,6 @@ end
 function _unm:serialize(out)
 	out'-'
 	self[1]:serialize(out)
-end
-
--- used in attributes, should also be used in _var's name and in _ctype's name maybe but idk
-local _name = nodeclass'name'
-function _name:init(arg)
-	self[1] = assert.type(arg, 'string')
-end
-function _name:serialize(out)
-	out(self[1])
 end
 
 local _attr = nodeclass'attr'	-- __attribute(( ... ))

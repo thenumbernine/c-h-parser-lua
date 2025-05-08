@@ -93,9 +93,11 @@ function C_H_Parser:parseQualifiers(keywords, qualifiers)
 	qualifiers = qualifiers or {}
 	local found
 	repeat
-print('found', self.t.token, self.t.tokentype)		
+		found = nil
+
 		-- special case, for all qualifiers, include __attribute__ here
 		if self:canbe('__attribute__', 'keyword') then
+			found = true
 			-- special case .__attribute__ is a table holding attributes to-be-serialized
 			local names = table()	-- list of words in the attribute
 			self:mustbe('(', 'symbol')
@@ -106,16 +108,21 @@ print('found', self.t.token, self.t.tokentype)
 				if self:canbe('(', 'symbol') then
 					local args = table()
 					repeat
-						-- list of strings or numbers ...
-						local numval = self:canbe(nil, 'number') 
-						if numval then
-							args:insert(self:node('_number', numval))
+						local nameval = self:canbe(nil, 'name')
+						if nameval then
+							args:insert(self:node('_name', nameval))
 						else
-							local strval = self:canbe(nil, 'string')
-							if strval then
-								args:insert(self:node('_string', strval))
+							-- list of strings or numbers ...
+							local numval = self:canbe(nil, 'number')
+							if numval then
+								args:insert(self:node('_number', numval))
 							else
-								error{msg="attribute got unknown parameter"}
+								local strval = self:canbe(nil, 'string')
+								if strval then
+									args:insert(self:node('_string', strval))
+								else
+									error{msg="attribute got unknown parameter"}
+								end
 							end
 						end
 					until not self:canbe(',', 'symbol')
@@ -128,9 +135,9 @@ print('found', self.t.token, self.t.tokentype)
 			self:mustbe(')', 'symbol')
 			qualifiers.__attribute__ = qualifiers.__attribute__ or table()
 			qualifiers.__attribute__:insert(self:node('_attr', table.unpack(names)))
+
 		else
 
-			found = nil
 			for _,keyword in ipairs(keywords) do
 				if type(keyword) == 'string' then
 					if self:canbe(keyword, 'keyword') then
@@ -278,11 +285,11 @@ function C_H_Parser:parseDecl(quals, isStructDecl, isFuncArg)
 	--  but for here, I'm just gonna be lazy and append the 'const' or 'volatile' to the name here, because I'm lazy.
 	if quals.const then
 		--startType = self:node('_const', startType)
-		startType.name = startType.name..' const'
+		startType.name = (startType.name or '')..' const'
 	end
 	if quals.volatile then
 		--startType = self:node('_volatile', startType)
-		startType.name = startType.name..' volatile'
+		startType.name = (startType.name or '')..' volatile'
 	end
 	--]]
 

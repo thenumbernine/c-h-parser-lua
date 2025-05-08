@@ -39,7 +39,7 @@ for i,ctype in ipairs(headers.declTypes) do
 end
 print()
 
--- this should be a collection of enumdef's 
+-- this should be a collection of enumdef's
 print'non-typedef enums:'
 for i,enumDef in ipairs(headers.anonEnumValues) do
 	print('#'..i, enumDef:toC()..';')
@@ -68,7 +68,7 @@ stmtQuals::
 stmtDecls::
 	startType
 	stmtQuals
-	
+
 	-- 1-or-many, or 0-or-many?
 	subDecl
 	{',' subDecl}
@@ -77,22 +77,22 @@ stmtDecls::
 # Like int a, *b, c[2], d; makes int a, int*b, int[2]c, int d;
 # names are optional too.
 structDecls::
-	startType	
-	
+	startType
+
 	# if 'const' & 'volatile' also goes in subDecl then I can remove this one rule-expr right?
 	# but likewise, if structDecls and stmtDecls overlaps then this can harmlessly go here.
 	structDeclQuals		# struct fields can have proceeding 'const' / 'volatile' quals
-	
+
 	subDecl {',' subDecl}
 	;
 
 startType::
 	(
 		('struct' | 'union') [name] [
-			'{' 
-				{ 
+			'{'
+				{
 					structDeclQuals		# struct fields can have preceding 'const' / 'volatile', no other quals
-					structDecls 
+					structDecls
 					';'
 				}
 			'}'
@@ -118,7 +118,7 @@ subDecl::
 	'(' subDecl ')' |
 	'*' subDecl |
 	structDeclQuals subDecl |
-	
+
 	# arrays or function-args can go anywhere in the parenthesis list.
 	# so long as they are rhs of the name.
 	# but in all the parenthesis-list, only one function-arg list can exist.
@@ -131,7 +131,7 @@ subDecl::
 		] |
 		{'[' number ']'}		# where does the array rule go?  in all the decl, don't allow arrays if function-args were ever found, unless the array is next to the inner-most name ... smh C ...
 	) |
-	
+
 	cpSubDecl
 	;
 
@@ -139,7 +139,7 @@ subDecl::
 # NOTICE bitfields only for subDecls of structs...
 cpSubDecl:: name [':' number];
 
-# really this is just 
+# really this is just
 # 1) stmtDecls
 # 2) ... but enforcing 'structDeclQuals' i.e. non-stmt-decl-quals, i.e. 'const' / 'volatile' ... tho without stmt decl quals you can even avoid this check and merge it into the subDecl rule...
 # 3) ... and without multiple names per type

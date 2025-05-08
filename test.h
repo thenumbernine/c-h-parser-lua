@@ -34,7 +34,7 @@ int (*ifp1)();
 int (*if1arip[20])(int d);
 
 struct memberFuncPtrStruct {
-	int (*c)();	
+	int (*c)();
 	int (*d[20])(int d);
 };
 
@@ -203,8 +203,8 @@ int f1(), f2(int);
 volatile int voli;
 int volatile voli2;
 volatile int voli3;
-//volatile int volatile voli;	//warning duplicate 'voliatile' declaration specifier 
-//int volatile volatile voli;	//warning duplicate 'voliatile' declaration specifier 
+//volatile int volatile voli;	//warning duplicate 'voliatile' declaration specifier
+//int volatile volatile voli;	//warning duplicate 'voliatile' declaration specifier
 
 // if i can do `int volatile` then can i do `struct {} volatile` as well?  yes.
 struct { int foo; } volatile const * fvps;
@@ -215,7 +215,7 @@ struct { int foo; } volatile const * fvps;
 // same for static etc?
 //int static is;		// warning unused static ... ofc.  static goes on rhs like volatile
 
-//void inline * const * vif();	// 'inline' can go right of the typename ... but not of the *'s or their const attrs 
+//void inline * const * vif();	// 'inline' can go right of the typename ... but not of the *'s or their const attrs
 
 typedef volatile int volatileinttype;	// works
 //typedef static int staticinttype;		// doesn't work
@@ -227,7 +227,7 @@ typedef int const * volatile * const volatile * volatile const vvvp;
 // more lhs type-qualifiers:
 const volatile extern int constvolatilestaticint;
 
-// can you put a struct in a funciton arg? 
+// can you put a struct in a funciton arg?
 // yes, tho vim doesn't think so.
 int funcofstruct(struct { int a; } ((a))[20]);
 
@@ -245,3 +245,5 @@ typedef void FuncType(int, char, double);
 // can you do 'int a,b' but as func args?
 // nope.
 //int funcofsubdecls(int a, b);
+
+extern __attribute__((attrname)) __attribute__((attr2(k,"v"))) int x;
