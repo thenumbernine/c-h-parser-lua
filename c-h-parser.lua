@@ -233,14 +233,20 @@ function C_H_Parser:parseDecl(quals, isStructDecl, isFuncArg)
 		return self:node('_fwdDecl', startType)
 	end
 
+	-- [[
 	-- See if we're using a const type -- that reflects on every subsequent field
 	--  while in C if we get a * on the lhs, that marks the start of the 1st subdecl's field.
+	-- TODO for subdecls ,i.e. func args and variables, I use an empty-string name as a child of _const
+	--  but for here, I'm just gonna be lazy and append the 'const' or 'volatile' to the name here, because I'm lazy.
 	if quals.const then
-		startType = self:node('_const', startType)
+		--startType = self:node('_const', startType)
+		startType.name = startType.name..' const'
 	end
 	if quals.volatile then
-		startType = self:node('_volatile', startType)
+		--startType = self:node('_volatile', startType)
+		startType.name = startType.name..' volatile'
 	end
+	--]]
 
 	-- always decl here?
 	-- yes?

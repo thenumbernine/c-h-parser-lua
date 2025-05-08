@@ -28,28 +28,31 @@ function AST:toC()
 	
 	local out = setmetatable({}, {
 		__call = function(out, x)
+			x = tostring(x)
 			local lastChar = s:sub(-1)
 			if x == '\n' then
-				s = s .. tostring(x)
+				s = s .. x
+			elseif x == ')' and lastChar == ' ' then
+				s = s:sub(1,-2) .. x
 			elseif lastChar == '(' and x == '*' then -- no space between (*
 				-- also, if the char before (* is a %w then put a space between %w and (
 				if s:sub(-2,-2):match'%w' then
 					s = s:sub(1,-2)..' (*'
 				else
-					s = s .. tostring(x)
+					s = s .. x
 				end
 			elseif lastChar == '*' and x == '*' then	-- no space between **
-				s = s .. tostring(x)
+				s = s .. x
 			elseif lastChar == '}' and x == ';' then	-- no space for };
-				s = s .. tostring(x)
+				s = s .. x
 			elseif x == '*' or x == '{' then					-- put only space before these
-				s = s .. sep .. tostring(x)
+				s = s .. sep .. x
 			elseif lastChar == '}' or lastChar == ',' then		-- space after only
-				s = s .. sep .. tostring(x)
+				s = s .. sep .. x
 			elseif dontSpace[x] or dontSpace[lastChar] then
-				s = s .. tostring(x)	-- no sep
+				s = s .. x	-- no sep
 			else
-				s = s .. sep .. tostring(x)
+				s = s .. sep .. x
 			end
 			sep = ' '
 		end,
@@ -71,7 +74,6 @@ local function nodeclass(type, parent, args)
 	return cl
 end
 ast.nodeclass = nodeclass
-
 
 local _ctype = nodeclass'ctype'
 function _ctype:init(name)
