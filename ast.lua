@@ -28,15 +28,13 @@ function AST:toC()
 
 	local out = setmetatable({}, {
 		__call = function(out, x)
---DEBUG:print('AST:toC out', x)
 			x = tostring(x)
+--DEBUG:print('AST:toC out', require 'ext.tolua'(x))
 			local lastChar = s:sub(-1)
 			if x == '\n' then
 				s = s .. x
-			elseif
-			--x:match'^%d' and 	-- TODO why isn't this getting hit?
-			s:sub(-2) == '- ' then -- "- " + digit = "-"+digit
-				s = s:sub(1,-2) .. x
+			elseif lastChar == '-' and x:match'^%d' then -- "-" + digit = "-"+digit
+				s = s .. x
 			elseif x == ')' and lastChar == ' ' then	-- " "+")" => ")"
 				s = s:sub(1,-2) .. x
 			elseif lastChar == '(' and x == '*' then -- no space between (*
