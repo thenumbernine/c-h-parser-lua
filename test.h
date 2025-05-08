@@ -252,3 +252,5 @@ extern
 		int attrtest1x;
 extern int attrtest1 __attribute((deprecated)),
 	attrtest2 __attribute__((deprecated));
+
+extern int arrayWithExpr[2+2];

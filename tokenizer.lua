@@ -5,7 +5,10 @@ local Tokenizer = require 'parser.base.tokenizer'
 local C_H_Tokenizer = Tokenizer:subclass()
 
 function C_H_Tokenizer:initSymbolsAndKeywords()
-	for w in ([[... * ( ) { } [ ] ; : , = -]]):gmatch('%S+') do
+	for w in ([[
+... ( ) { } [ ] ; : , =
+&& || < > <= >= != == | ^ & << >> + - * / % ! - ~
+]]):gmatch('%S+') do
 		self.symbols:insert(w)
 	end
 

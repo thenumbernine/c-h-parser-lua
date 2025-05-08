@@ -147,12 +147,12 @@ end
 local _array = nodeclass'array'
 function _array:init(ch, count)
 	self[1] = ch
-	self.count = count
+	self[2] = count
 end
 function _array:serialize(out)
 	self[1]:serialize(out)
 	out'['
-	out(self.count)
+	self[2]:serialize(out)
 	out']'
 end
 
@@ -359,16 +359,6 @@ function _vararg:serialize(out)
 	out'...'
 end
 
--- me slowly adding expressions for enums ...
-local _unm = nodeclass'unm'
-function _unm:init(arg)
-	self[1] = arg
-end
-function _unm:serialize(out)
-	out'-'
-	self[1]:serialize(out)
-end
-
 local _attr = nodeclass'attr'	-- __attribute(( ... ))
 function _attr:init(...)
 	for i=1,select('#', ...) do
@@ -400,6 +390,62 @@ function _call:serialize(out)
 		arg:serialize(out)
 	end
 	out')'
+end
+
+local _op = nodeclass'op'
+function _op:init(...)
+	for i=1,select('#', ...) do
+		self[i] = select(i, ...)
+	end
+end
+function _op:serialize(out)
+--DEBUG:print('_op:serialize', self.op)
+	for i,x in ipairs(self) do
+		x:serialize(out)
+		if i < #self then out(self.op) end
+	end
+end
+
+for _,info in ipairs{
+	{'add','+'},
+	{'sub','-'},
+	{'mul','*'},
+	{'div','/'},
+	{'mod','%'},
+	{'lt','<'},
+	{'le','<='},
+	{'gt','>'},
+	{'ge','>='},
+	{'eq','=='},
+	{'ne','!='},
+	{'and','&&'},
+	{'or','||'},
+	{'band', '&'},
+	{'bxor','^'},
+	{'bor', '|'},
+	{'shl', '<<'},
+	{'shr', '>>'},
+} do
+	local cl = nodeclass(info[1], _op)
+	cl.op = info[2]
+end
+
+for _,info in ipairs{
+	{'unm','-'},
+	{'not','!'},
+	{'bnot','~'},
+} do
+	local cl = nodeclass(info[1], _op)
+	cl.op = info[2]
+	function cl:init(...)
+		for i=1,select('#', ...) do
+			self[i] = select(i, ...)
+		end
+	end
+	function cl:serialize(out)
+		out(self.op)
+		self[1]:serialize(out)	-- spaces required for 'not'
+	end
 end
 
 return ast

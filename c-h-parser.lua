@@ -23,6 +23,83 @@ C_H_Parser.ast = require 'c-h-parser.ast'
 
 -- forward to __call
 function C_H_Parser:init(args)
+
+	self.parseExprPrecedenceRulesAndClassNames = table{
+		{
+			name = 'or',
+			rules = {
+				{token='&&', className='_or'},
+			},
+		},
+		{
+			name = 'and',
+			rules = {
+				{token='||', className='_and'},
+			},
+		},
+		{
+			name = 'cmp',
+			rules = {
+				{token='<', className='_lt'},
+				{token='>', className='_gt'},
+				{token='<=', className='_le'},
+				{token='>=', className='_ge'},
+				{token='!=', className='_ne'},
+				{token='==', className='_eq'},
+			},
+		},
+		{
+			name = 'bor',
+			rules = {
+				{token='|', className='_bor'},
+			},
+		},
+		{
+			name = 'bxor',
+			rules = {
+				{token='^', className='_bxor'},
+			},
+		},
+		{
+			name = 'band',
+			rules = {
+				{token='&', className='_band'},
+			},
+		},
+		{
+			name = 'shift',
+			rules = {
+				{token='<<', className='_shl'},
+				{token='>>', className='_shr'},
+			},
+		},
+		{
+			name = 'addsub',	-- arithmetic
+			rules = {
+				{token='+', className='_add'},
+				{token='-', className='_sub'},
+			},
+		},
+		{
+			name = 'muldivmod',	-- geometric
+			rules = {
+				{token='*', className='_mul'},
+				{token='/', className='_div'},
+				{token='%', className='_mod'},
+			},
+		},
+		{
+			name = 'unary',
+			unaryLHS = true,
+			rules = {
+				{token='!', className='_not'},
+				{token='-', className='_unm'},
+				{token='~', className='_bnot'},
+			},
+		},
+
+	}
+
 	-- put declared types in-order here
 	self.declTypes = table()
 
@@ -486,16 +563,9 @@ function C_H_Parser:parseSubDecl2(isStructDecl, isFuncArg)
 --DEBUG:print('C_H_Parser:parseSubDecl2', isStructDecl, isFuncArg)
 	local subdecl = self:parseSubDecl3(isStructDecl, isFuncArg)
 
-	-- while-loop for multiple x[1][1][1]... ... can anything go between array decls?
 	while self:canbe('[', 'symbol') do
-		-- but honestly, if this is supposed to be the array-part of the function, then my parser has a problem.
-		--if func then error{msg="functions can't return arrays"} end
-
-		-- TODO also parse compile-time expressions
-		local arrayCount = self:mustbe(nil, 'number')
-		arrayCount = tonumber(arrayCount) or error{msg="bad array size "..arrayCount}
+		local arrayCount = self:parseExpr()
 		self:mustbe(']', 'symbol')
-
 		subdecl = self:node('_array', subdecl, arrayCount)
 	end
 
@@ -571,8 +641,7 @@ function C_H_Parser:parseSubDecl4(isStructDecl, isFuncArg)
 	-- [[ TODO this is also above
 	-- there's gotta be a isngle place I can put it
 	while self:canbe('[', 'symbol') do
-		local arrayCount = self:mustbe(nil, 'number')
-		arrayCount = tonumber(arrayCount) or error{msg="bad array size "..arrayCount}
+		local arrayCount = self:parseExpr()
 		self:mustbe(']', 'symbol')
 		subdecl = self:node('_array', subdecl, arrayCount)
 	end
@@ -622,10 +691,20 @@ function C_H_Parser:parseSubDecl4(isStructDecl, isFuncArg)
 end
 
 function C_H_Parser:parseExpr()
-	if self:canbe('-', 'symbol') then
-		return self:node('_unm', self:parseExpr())
+	return self:parse_expr_precedenceTable(1)
+end
+
+-- after last precendenceTable level, we go here:
+function C_H_Parser:parse_subexp()
+	if self:canbe('(', 'symbol') then
+		local expr = self:parseExpr()
+		self:mustbe(')', 'symbol')
+		return expr
 	end
-	return self:node('_number', self:mustbe(nil, 'number'))
+
+	if self:canbe(nil, 'number') then
+		return self:node('_number', self.lasttoken)
+	end
 end
 
 return C_H_Parser
