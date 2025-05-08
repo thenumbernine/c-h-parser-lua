@@ -564,8 +564,12 @@ function C_H_Parser:parseSubDecl2(isStructDecl, isFuncArg)
 	local subdecl = self:parseSubDecl3(isStructDecl, isFuncArg)
 
 	while self:canbe('[', 'symbol') do
-		local arrayCount = self:parseExpr()
-		self:mustbe(']', 'symbol')
+		local arrayCount
+		if not self:canbe(']', 'symbol') then	-- it can be empty ...
+			arrayCount = self:parseExpr()
+			if not arrayCount then error{msg="expected array size"} end
+			self:mustbe(']', 'symbol')
+		end
 		subdecl = self:node('_array', subdecl, arrayCount)
 	end
 
@@ -641,8 +645,12 @@ function C_H_Parser:parseSubDecl4(isStructDecl, isFuncArg)
 	-- [[ TODO this is also above
 	-- there's gotta be a isngle place I can put it
 	while self:canbe('[', 'symbol') do
-		local arrayCount = self:parseExpr()
-		self:mustbe(']', 'symbol')
+		local arrayCount
+		if not self:canbe(']', 'symbol') then	-- it can be empty ...
+			arrayCount = self:parseExpr()
+			if not arrayCount then error{msg="expected array size"} end
+			self:mustbe(']', 'symbol')
+		end
 		subdecl = self:node('_array', subdecl, arrayCount)
 	end
 	--]]

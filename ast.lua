@@ -152,7 +152,7 @@ end
 function _array:serialize(out)
 	self[1]:serialize(out)
 	out'['
-	self[2]:serialize(out)
+	if self[2] then self[2]:serialize(out) end	-- can be empty
 	out']'
 end
 
