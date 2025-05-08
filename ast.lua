@@ -11,7 +11,7 @@ ast.node = AST
 function AST:toC()
 	local s = ''
 	local sep = ''
-	
+
 	local dontSpace = {
 		['\t'] = true,
 		['\n'] = true,
@@ -25,14 +25,19 @@ function AST:toC()
 		[','] = true,
 		['*'] = true,
 	}
-	
+
 	local out = setmetatable({}, {
 		__call = function(out, x)
+--DEBUG:print('AST:toC out', x)
 			x = tostring(x)
 			local lastChar = s:sub(-1)
 			if x == '\n' then
 				s = s .. x
-			elseif x == ')' and lastChar == ' ' then
+			elseif
+			--x:match'^%d' and 	-- TODO why isn't this getting hit?
+			s:sub(-2) == '- ' then -- "- " + digit = "-"+digit
+				s = s:sub(1,-2) .. x
+			elseif x == ')' and lastChar == ' ' then	-- " "+")" => ")"
 				s = s:sub(1,-2) .. x
 			elseif lastChar == '(' and x == '*' then -- no space between (*
 				-- also, if the char before (* is a %w then put a space between %w and (
@@ -49,6 +54,8 @@ function AST:toC()
 				s = s .. sep .. x
 			elseif lastChar == '}' or lastChar == ',' then		-- space after only
 				s = s .. sep .. x
+			elseif lastChar == ' ' and x == ',' then	-- TODO when do we output spaces before commas?.  This is showing up in function args.
+				s = s:sub(1,-2) .. x
 			elseif dontSpace[x] or dontSpace[lastChar] then
 				s = s .. x	-- no sep
 			else
@@ -80,7 +87,7 @@ function _ctype:init(name)
 	self.name = name
 end
 function _ctype:serialize(out)
-	out(self.name)
+	if self.name and self.name ~= '' then out(self.name) end
 end
 
 local _ptr = nodeclass'ptr'
@@ -196,7 +203,7 @@ function _structType:init(args)
 end
 function _structType:serialize(out)
 	out(self.isUnion and 'union' or 'struct')
-	if self.name then out(self.name) end
+	if self.name and self.name ~= '' then out(self.name) end
 	if self.fields then
 		out'{'
 		if #self.fields > 0 then
@@ -235,12 +242,20 @@ function _funcType:init(ch, funcArgs)
 end
 function _funcType:serialize(out)
 	self[1]:serialize(out)
+
 	out'('
-	local sep
-	for _,arg in ipairs(self.funcArgs) do
-		if sep then out(sep) end
-		arg:serialize(out)
-		sep = ','
+	if #self.funcArgs == 1
+	and _ctype:isa(self.funcArgs[1])
+	and self.funcArgs[1].name == 'void'
+	then
+		-- special-case to convert '(void)' to '()'
+	else
+		local sep
+		for _,arg in ipairs(self.funcArgs) do
+			if sep then out(sep) end
+			arg:serialize(out)
+			sep = ','
+		end
 	end
 	out')'
 end
@@ -263,7 +278,7 @@ function _enumType:init(name, fields)
 end
 function _enumType:serialize(out)
 	out'enum'
-	if self.name then out(self.name) end
+	if self.name and self.name ~= '' then out(self.name) end
 	if self.fields then
 		out'{'
 		out'\n'
@@ -287,7 +302,7 @@ function _enumdef:init(name, value)
 	self.value = value
 end
 function _enumdef:serialize(out)
-	out(self.name)
+	if self.name and self.name ~= '' then out(self.name) end
 	if self.value then
 		out'='
 		self.value:serialize(out)
@@ -296,7 +311,7 @@ end
 
 local _vararg = nodeclass'vararg'
 function _vararg:serialize(out)
-	out'..'
+	out'...'
 end
 
 -- me slowly adding expressions for enums ...
