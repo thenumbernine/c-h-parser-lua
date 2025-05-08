@@ -36,7 +36,7 @@ function AST:toC()
 				s = s .. x
 			elseif lastChar == '-' and x:match'^%d' then -- "-" + digit = "-"+digit
 				s = s .. x
-			elseif x == ')' and lastChar == ' ' then	-- " "+")" => ")"
+			elseif lastChar == ' ' and (x == ')' or x == '[') then	-- " "+")" => ")", " "+"[" = "["
 				s = s:sub(1,-2) .. x
 			elseif lastChar == ')' and x:match'^[_%w]' then	-- ') '+name
 				s = s .. sep .. x
