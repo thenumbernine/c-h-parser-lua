@@ -1,8 +1,36 @@
 # C Header Parser in Lua
 
-## Use
-
 This is a C header parser.  No C function bodies allowed.
+
+## `c-h-parser.lua` ##
+
+This file parses C headers into an AST.
+
+How to process a single file:
+``` Lua
+local CHParser = require 'c-h-parser'
+local chparser = CHParser(code)
+```
+
+How to process multiple files:
+``` Lua
+local CHParser = require 'c-h-parser'
+local chparser = CHParser()
+chparser(file1data)
+chparser(file2data)
+...
+```
+
+The resulting `chparser` object contains the following:
+- `.declTypes` = list of types declared.
+- `.anonEnumValues` = list of `enum` values that weren't stored in named enum types.
+- `.symbolsInOrder` = list of symbols declared.
+
+## Dependencies
+
+This uses my [parser](https://github.com/thenumbernine/lua-parser) library.
+
+## Hisotry and Motivation:
 
 Before this I using my [C-preprocessor in Lua](https://github.com/thenumbernine/preproc-lua) to generate my [LuaJIT binding code from C headers](https://github.com/thenumbernine/lua-ffi-bindings) of various libraries / include files.
 This was fine, but sometimes I would need ot organize the results by hand.
