@@ -527,6 +527,13 @@ function C_H_Parser:parseStartType()
 				if self:canbe('int', 'name') then
 					name = name..' '..self.lasttoken
 				end
+			elseif self:canbe('signed', 'name')
+			or self:canbe('unsigned', 'name')
+			then
+				name = name..' '..self.lasttoken
+				if self:canbe('int', 'name') then
+					name = name..' '..self.lasttoken
+				end
 			end
 		else
 			name = self:mustbe(nil, 'name')
