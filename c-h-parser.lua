@@ -725,6 +725,10 @@ function C_H_Parser:parse_subexp()
 		return expr
 	end
 
+	if self:canbe(nil, 'name') then
+		return self:node('_var', self.lasttoken)
+	end
+
 	if self:canbe(nil, 'number') then
 		return self:node('_number', self.lasttoken)
 	end
