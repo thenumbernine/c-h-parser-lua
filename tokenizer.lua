@@ -9,7 +9,7 @@ function C_H_Tokenizer:initSymbolsAndKeywords()
 ... ( ) { } [ ] ; : , =
 && || < > <= >= != == | ^ & << >> + - * / % ! - ~
 ]]):gmatch('%S+') do
-		self.symbols:insert(w)
+		self.symbols[w] = true
 	end
 
 	-- self.keywords lets the tokenizer flag if this is a reserved word or not, that's all
